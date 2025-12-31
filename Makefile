@@ -1,3 +1,44 @@
+# Define the SLEEP command based on the operating system
+ifeq ($(OS),Windows_NT)
+	DETECTED_OS := Windows
+	# Use PowerShell sleep to avoid timeout quirks and allow comments on the same line
+	SLEEP = powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Sleep -Seconds 5"
+	NULL_REDIRECT = >nul 2>&1
+	SHELL_RUN = powershell -NoProfile -ExecutionPolicy Bypass -Command
+else
+	DETECTED_OS := Unix
+	SLEEP = sleep 5
+	NULL_REDIRECT = >/dev/null 2>&1
+	SHELL_RUN = sh -c
+endif
+
+# Auto-detect container runtime (docker or podman)
+ifeq ($(CONTAINER_RUNTIME),)
+    # Check if docker is available
+    ifeq ($(shell docker version $(NULL_REDIRECT) && echo yes),yes)
+        CONTAINER_RUNTIME = docker
+    else ifeq ($(shell podman version $(NULL_REDIRECT) && echo yes),yes)
+        CONTAINER_RUNTIME = podman
+    else
+        $(error Neither docker nor podman found. Please install one of them)
+    endif
+endif
+
+# Detect compose command format (docker compose vs docker-compose)
+ifeq ($(CONTAINER_RUNTIME),docker)
+    # Check if 'docker compose' works (newer Docker)
+    ifeq ($(shell docker compose version $(NULL_REDIRECT) && echo yes),yes)
+        COMPOSE = docker compose
+    else ifeq ($(shell docker-compose version $(NULL_REDIRECT) && echo yes),yes)
+        # Fall back to docker-compose (older Docker)
+        COMPOSE = docker-compose
+    else
+        $(error Docker is installed but docker compose or docker-compose command not found)
+    endif
+else
+    COMPOSE = $(CONTAINER_RUNTIME) compose
+endif
+
 .PHONY: swagger-clean
 swagger-clean:
 	rm -rf docs/swagger
@@ -40,11 +81,11 @@ swagger-fix-refs:
 
 .PHONY: up
 up:
-	docker compose up -d --build
+	$(COMPOSE) up -d --build
 
 .PHONY: down
 down:
-	docker compose down
+	$(COMPOSE) down
 
 .PHONY: run-server
 run-server:
@@ -109,38 +150,45 @@ init-db: up migrate-postgres migrate-clickhouse generate-ent migrate-ent seed-db
 # Run postgres migrations
 migrate-postgres:
 	@echo "Running Postgres migrations..."
-	@sleep 5  # Wait for postgres to be ready
-	@docker compose exec -T postgres psql -U flexprice -d flexprice -c "CREATE SCHEMA IF NOT EXISTS extensions;"
-	@docker compose exec -T postgres psql -U flexprice -d flexprice -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\" SCHEMA extensions;"
+	@$(SLEEP)
+	@$(COMPOSE) exec -T postgres psql -U flexprice -d flexprice -c "CREATE SCHEMA IF NOT EXISTS extensions;"
+	@$(COMPOSE) exec -T postgres psql -U flexprice -d flexprice -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\" SCHEMA extensions;"
 	@echo "Postgres migrations complete"
 
 # Run clickhouse migrations
 migrate-clickhouse:
 	@echo "Running Clickhouse migrations..."
-	@sleep 5  # Wait for clickhouse to be ready
+	@$(SLEEP)
+ifeq ($(DETECTED_OS),Windows)
+	@$(SHELL_RUN) "Get-ChildItem -Path migrations/clickhouse -Filter '*.sql' | ForEach-Object { Write-Host \"Running migration: $$_.FullName\"; Get-Content $$_.FullName | $(COMPOSE) exec -T clickhouse clickhouse-client --user=flexprice --password=flexprice123 --database=flexprice --multiquery }"
+else
 	@for file in migrations/clickhouse/*.sql; do \
 		if [ -f "$$file" ]; then \
 			echo "Running migration: $$file"; \
-			docker compose exec -T clickhouse clickhouse-client --user=flexprice --password=flexprice123 --database=flexprice --multiquery < "$$file"; \
+			$(COMPOSE) exec -T clickhouse clickhouse-client --user=flexprice --password=flexprice123 --database=flexprice --multiquery < "$$file"; \
 		fi \
 	done
+endif
 	@echo "Clickhouse migrations complete"
 
 # Seed initial data
 seed-db:
 	@echo "Running Seed data migration..."
-	@docker compose exec -T postgres psql -U flexprice -d flexprice -f /docker-entrypoint-initdb.d/V1__seed.sql
+	@$(COMPOSE) exec -T postgres psql -U flexprice -d flexprice -f /docker-entrypoint-initdb.d/V1__seed.sql
 	@echo "Postgres seed data migration complete"
 
 # Initialize kafka topics
 .PHONY: init-kafka
 init-kafka:
 	@echo "Creating Kafka topics..."
+ifeq ($(DETECTED_OS),Windows)
+	@$(SHELL_RUN) "for ($$i = 1; $$i -le 5; $$i++) { $(COMPOSE) exec -T kafka kafka-topics --bootstrap-server kafka:9092 --list > $$null 2>&1; if ($$?) { Write-Host \"Kafka is ready!\"; $(COMPOSE) exec -T kafka kafka-topics --create --if-not-exists --bootstrap-server kafka:9092 --topic events --partitions 1 --replication-factor 1 --config cleanup.policy=delete --config retention.ms=604800000; Write-Host \"Kafka topics created successfully\"; exit 0 } Write-Host \"Kafka not ready yet, waiting...\"; Start-Sleep -Seconds 5 } Write-Host \"Error: Kafka failed to become ready after 5 attempts\"; exit 1"
+else
 	@for i in 1 2 3 4 5; do \
 		echo "Attempt $$i: Checking if Kafka is ready..."; \
-		if docker compose exec -T kafka kafka-topics --bootstrap-server kafka:9092 --list >/dev/null 2>&1; then \
+		if $(COMPOSE) exec -T kafka kafka-topics --bootstrap-server kafka:9092 --list >/dev/null 2>&1; then \
 			echo "Kafka is ready!"; \
-			docker compose exec -T kafka kafka-topics --create --if-not-exists \
+			$(COMPOSE) exec -T kafka kafka-topics --create --if-not-exists \
 				--bootstrap-server kafka:9092 \
 				--topic events \
 				--partitions 1 \
@@ -151,19 +199,20 @@ init-kafka:
 			exit 0; \
 		fi; \
 		echo "Kafka not ready yet, waiting..."; \
-		sleep 5; \
+		$(SLEEP) \
 	done; \
 	echo "Error: Kafka failed to become ready after 5 attempts"; \
 	exit 1
+endif
 
-# Clean all docker containers and volumes related to the project
+# Clean all containers and volumes related to the project
 .PHONY: clean-docker
 clean-docker:
-	@echo "Cleaning all docker containers and volumes..."
-	@docker compose down -v
-	@docker container prune -f
-	@docker volume rm $$(docker volume ls -q | grep flexprice) 2>/dev/null || true
-	@echo "Docker cleanup complete"
+	@echo "Cleaning all containers and volumes..."
+	@$(COMPOSE) down -v
+	@$(CONTAINER_RUNTIME) container prune -f
+	@$(CONTAINER_RUNTIME) volume rm $$($(CONTAINER_RUNTIME) volume ls -q | grep flexprice) 2>/dev/null || true
+	@echo "Container cleanup complete"
 
 # Full local setup
 .PHONY: setup-local
@@ -174,28 +223,28 @@ setup-local: up init-db init-kafka
 .PHONY: clean-start
 clean-start:
 	@make down
-	@docker compose down -v
+	@$(COMPOSE) down -v
 	@make setup-local
 
 # Build the flexprice image separately
 .PHONY: build-image
 build-image:
 	@echo "Building flexprice image..."
-	@docker compose build flexprice-build
+	@$(COMPOSE) build flexprice-build
 	@echo "Flexprice image built successfully"
 
 # Start only the flexprice services
 .PHONY: start-flexprice
 start-flexprice:
 	@echo "Starting flexprice services..."
-	@docker compose up -d flexprice-api flexprice-consumer flexprice-worker
+	@$(COMPOSE) up -d flexprice-api flexprice-consumer flexprice-worker
 	@echo "Flexprice services started successfully"
 
 # Stop only the flexprice services
 .PHONY: stop-flexprice
 stop-flexprice:
 	@echo "Stopping flexprice services..."
-	@docker compose stop flexprice-api flexprice-consumer flexprice-worker
+	@$(COMPOSE) stop flexprice-api flexprice-consumer flexprice-worker
 	@echo "Flexprice services stopped successfully"
 
 # Restart only the flexprice services
@@ -208,7 +257,7 @@ restart-flexprice: stop-flexprice start-flexprice
 dev-setup:
 	@echo "Setting up FlexPrice development environment..."
 	@echo "Step 1: Starting infrastructure services..."
-	@docker compose up -d postgres kafka clickhouse temporal temporal-ui
+	@$(COMPOSE) up postgres kafka clickhouse temporal temporal-ui -d
 	@echo "Step 2: Building FlexPrice application image..."
 	@make build-image
 	@echo "Step 3: Running database migrations and initializing Kafka..."
@@ -244,7 +293,7 @@ apply-migration:
 
 .PHONY: docker-build-local
 docker-build-local:
-	docker compose build flexprice-build
+	$(COMPOSE) build flexprice-build
 
 .PHONY: install-typst
 install-typst:

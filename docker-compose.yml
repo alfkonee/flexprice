@@ -2,7 +2,7 @@ services:
   postgres:
     image: postgres:17
     ports:
-      - 127.0.0.1:5432:5432
+      - 5432:5432
     environment:
       POSTGRES_USER: flexprice
       POSTGRES_PASSWORD: flexprice123
@@ -20,7 +20,7 @@ services:
   kafka:
     image: confluentinc/cp-kafka:7.7.1
     ports:
-      - "127.0.0.1:29092:29092"
+      - "29092:29092"
     environment:
       CLUSTER_ID: ca497efe-9f82-4b84-890b-d9969a9a2e1c
       KAFKA_BROKER_ID: 0
@@ -47,9 +47,9 @@ services:
   clickhouse:
     image: clickhouse/clickhouse-server:24.9-alpine
     ports:
-      - "127.0.0.1:8123:8123"
-      - "127.0.0.1:9000:9000"
-      - "127.0.0.1:9009:9009"
+      - "8123:8123"
+      - "9000:9000"
+      - "9009:9009"
     environment:
       CLICKHOUSE_USER: flexprice
       CLICKHOUSE_PASSWORD: flexprice123
@@ -74,7 +74,7 @@ services:
     depends_on:
       - kafka
     ports:
-      - "127.0.0.1:8084:8080"
+      - "8084:8080"
     environment:
       KAFKA_CLUSTERS_0_NAME: local
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
@@ -136,7 +136,7 @@ services:
       temporal:
         condition: service_started
     ports:
-      - "127.0.0.1:8080:8080"
+      - "8080:8080"
     environment:
       - FLEXPRICE_DEPLOYMENT_MODE=api
       # Override config.yaml settings for containerized environment
