@@ -285,6 +285,68 @@ kafka:
       passwordKey: "password"
 ```
 
+## Testing
+
+This chart includes comprehensive tests using Helm's native test feature. Tests validate connectivity to all dependencies and verify the deployment is healthy.
+
+### Run All Tests
+
+```bash
+# Install the chart first
+helm install flexprice ./flexprice -n flexprice
+
+# Run all tests
+helm test flexprice -n flexprice
+```
+
+### Run Specific Tests
+
+```bash
+# Test API health
+helm test flexprice -n flexprice --tests test-api-health
+
+# Test database connectivity
+helm test flexprice -n flexprice --tests test-postgres-connectivity
+
+# Test analytics database
+helm test flexprice -n flexprice --tests test-clickhouse-connectivity
+
+# Test message broker
+helm test flexprice -n flexprice --tests test-kafka-connectivity
+
+# Test workflow engine
+helm test flexprice -n flexprice --tests test-temporal-connectivity
+
+# Test deployment status
+helm test flexprice -n flexprice --tests test-deployments-status
+```
+
+### View Test Results
+
+```bash
+# List all test pods
+kubectl get pods -l app.kubernetes.io/instance=flexprice,helm.sh/hook=test
+
+# View test output
+kubectl logs test-pod-name -n flexprice
+
+# Check test status
+kubectl describe pod test-pod-name -n flexprice
+```
+
+### Test Validation
+
+Tests automatically detect your deployment configuration (external services vs operators) and validate accordingly:
+
+- ✅ **test-api-health** - Verifies API responds to health checks on `/health` endpoint
+- ✅ **test-postgres-connectivity** - Tests PostgreSQL connectivity (auto-detects external or operator-managed)
+- ✅ **test-clickhouse-connectivity** - Verifies ClickHouse is accessible
+- ✅ **test-kafka-connectivity** - Validates all Kafka brokers are reachable
+- ✅ **test-temporal-connectivity** - Tests Temporal workflow engine connectivity
+- ✅ **test-deployments-status** - Confirms all 3 deployments (api, consumer, worker) are ready
+
+For detailed testing documentation, see [QUICK_TEST.md](QUICK_TEST.md) for quick reference or [HELM_TESTS.md](HELM_TESTS.md) for comprehensive guide.
+
 ## Production Recommendations
 
 1. **Enable TLS** - Configure TLS for all external connections
@@ -294,6 +356,7 @@ kafka:
 5. **Enable autoscaling** - Set `flexprice.autoscaling.enabled: true`
 6. **Enable network policies** - Set `networkPolicy.enabled: true`
 7. **Use read replicas** - Configure PostgreSQL reader endpoint for read-heavy workloads
+8. **Run tests regularly** - Use `helm test` in your CI/CD pipeline to validate deployments
 
 ## Upgrading
 

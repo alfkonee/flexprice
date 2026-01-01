@@ -22,7 +22,7 @@ dependencies:
   # https://stackgres.io/
   # ==========================================================================
   - name: stackgres-operator
-    version: "1.12.0"
+    version: "1.18.3"
     repository: https://stackgres.io/downloads/stackgres-k8s/stackgres/helm/
     condition: postgres.operator.install
     alias: stackgres
@@ -32,7 +32,7 @@ dependencies:
   # https://github.com/Altinity/clickhouse-operator
   # ==========================================================================
   - name: altinity-clickhouse-operator
-    version: "0.24.0"
+    version: "0.25.6"
     repository: https://docs.altinity.com/clickhouse-operator/
     condition: clickhouse.operator.install
     alias: clickhouse-operator
@@ -41,8 +41,8 @@ dependencies:
   # Redpanda Operator - Kafka-compatible streaming platform
   # https://docs.redpanda.com/current/deploy/deployment-option/self-hosted/kubernetes/
   # ==========================================================================
-  - name: redpanda-operator
-    version: "0.4.25"
+  - name: operator
+    version: "25.3.1"
     repository: https://charts.redpanda.com
     condition: kafka.operator.install
     alias: redpanda-operator

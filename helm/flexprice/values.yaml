@@ -411,6 +411,78 @@ temporal:
     retryMaxIntervalSeconds: 10
     retryBackoffCoefficient: 1.5
 
+  # ---------------------------------------------------------------------------
+  # Temporal Subchart Configuration (only used when operator.install is true)
+  # See: https://github.com/temporalio/helm-charts
+  # 
+  # IMPORTANT: When installing Temporal, you must configure database credentials.
+  # The defaults below use PostgreSQL but require you to set:
+  # - temporal.server.config.persistence.default.sql.host
+  # - temporal.server.config.persistence.default.sql.password
+  # - temporal.server.config.persistence.visibility.sql.host  
+  # - temporal.server.config.persistence.visibility.sql.password
+  # Or use an existingSecret.
+  # ---------------------------------------------------------------------------
+  
+  # Server configuration (subchart)
+  server:
+    replicaCount: 1
+    config:
+      persistence:
+        default:
+          driver: "sql"
+          sql:
+            driver: "postgres12"
+            host: ""           # Required: e.g., "postgres.default.svc.cluster.local"
+            port: 5432
+            database: temporal
+            user: "temporal"
+            password: ""       # Required: set this or use existingSecret
+            existingSecret: "" # Alternative: name of secret with 'password' key
+        visibility:
+          driver: "sql"
+          sql:
+            driver: "postgres12"
+            host: ""           # Required: e.g., "postgres.default.svc.cluster.local"
+            port: 5432
+            database: temporal_visibility
+            user: "temporal"
+            password: ""       # Required: set this or use existingSecret
+            existingSecret: "" # Alternative: name of secret with 'password' key
+  
+  # Web UI (subchart)
+  web:
+    enabled: true
+    replicaCount: 1
+  
+  # Admin tools (subchart)
+  admintools:
+    enabled: true
+  
+  # Cassandra (disabled - using PostgreSQL)
+  cassandra:
+    enabled: false
+  
+  # MySQL (disabled - using PostgreSQL)
+  mysql:
+    enabled: false
+  
+  # PostgreSQL (disabled - using external/shared PostgreSQL)
+  postgresql:
+    enabled: false
+  
+  # Elasticsearch (disabled)
+  elasticsearch:
+    enabled: false
+  
+  # Prometheus (optional)
+  prometheus:
+    enabled: false
+  
+  # Grafana (optional)
+  grafana:
+    enabled: false
+
 # -----------------------------------------------------------------------------
 # Observability Configuration
 # -----------------------------------------------------------------------------
@@ -630,10 +702,6 @@ redpanda-operator:
     repository: docker.redpanda.com/redpandadata/redpanda-operator
     tag: "v2.2.2-24.2.7"
   
-  # Watch all namespaces
-  scope:
-    watchAllNamespaces: true
-  
   # Resource limits
   resources:
     limits:
@@ -643,73 +711,6 @@ redpanda-operator:
       cpu: 100m
       memory: 128Mi
   
-  # Webhook configuration
+  # Webhook configuration (disabled by default for Namespace scope)
   webhook:
-    enabled: true
-
-# -----------------------------------------------------------------------------
-# Temporal Subchart Configuration
-# Only used when temporal.operator.install is true
-# See: https://github.com/temporalio/helm-charts
-# -----------------------------------------------------------------------------
-temporal:
-  # Note: This configures the temporal subchart, not the FlexPrice temporal settings
-  # FlexPrice temporal settings are under the main temporal: section above
-  
-  # Server configuration
-  server:
-    replicaCount: 1
-    config:
-      persistence:
-        default:
-          driver: "sql"
-          sql:
-            driver: "postgres12"
-            # Will be overridden to use FlexPrice PostgreSQL
-            host: ""
-            port: 5432
-            database: temporal
-            user: ""
-            password: ""
-        visibility:
-          driver: "sql"
-          sql:
-            driver: "postgres12"
-            host: ""
-            port: 5432
-            database: temporal_visibility
-            user: ""
-            password: ""
-  
-  # Web UI
-  web:
-    enabled: true
-    replicaCount: 1
-  
-  # Admin tools
-  admintools:
-    enabled: true
-  
-  # Cassandra (disabled - using PostgreSQL)
-  cassandra:
-    enabled: false
-  
-  # MySQL (disabled - using PostgreSQL)
-  mysql:
-    enabled: false
-  
-  # PostgreSQL (disabled - using external/shared PostgreSQL)
-  postgresql:
-    enabled: false
-  
-  # Elasticsearch (disabled)
-  elasticsearch:
-    enabled: false
-  
-  # Prometheus (optional)
-  prometheus:
-    enabled: false
-  
-  # Grafana (optional)
-  grafana:
     enabled: false
