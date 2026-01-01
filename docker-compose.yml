@@ -19,6 +19,8 @@ services:
 
   kafka:
     image: confluentinc/cp-kafka:7.7.1
+    profiles:
+      - kafka
     ports:
       - "29092:29092"
     environment:
@@ -43,6 +45,82 @@ services:
       interval: 5s
       timeout: 3s
       retries: 30
+
+  kafka-init:
+    image: confluentinc/cp-kafka:7.7.1
+    profiles:
+      - kafka
+    depends_on:
+      kafka:
+        condition: service_healthy
+    volumes:
+      - ./migrations/kafka/init-kafka-topics.sh:/init-kafka-topics.sh
+    command: /bin/bash /init-kafka-topics.sh
+    environment:
+      - KAFKA_BROKER=kafka:9092
+
+  redpanda:
+    image: redpandadata/redpanda:latest
+    ports:
+      - "29093:29093"
+    volumes:
+      - redpanda-data:/var/lib/redpanda/data
+    command:
+      - redpanda
+      - start
+      - --overprovisioned
+      - --smp
+      - "1"
+      - --memory
+      - "1G"
+      - --reserve-memory
+      - "0M"
+      - --node-id
+      - "0"
+      - --check=false
+      - --kafka-addr
+      - "PLAINTEXT://0.0.0.0:9092,OUTSIDE://0.0.0.0:29093"
+      - --advertise-kafka-addr
+      - "PLAINTEXT://redpanda:9092,OUTSIDE://localhost:29093"
+      - --rpc-addr
+      - "0.0.0.0:33145"
+      - --advertise-rpc-addr
+      - "redpanda:33145"
+    environment:
+      REDPANDA_AUTO_CREATE_TOPICS_ENABLED: "false"
+    healthcheck:
+      test: ["CMD", "rpk", "cluster", "info", "--brokers", "localhost:9092"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  redpanda-init:
+    image: redpandadata/redpanda:latest
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    volumes:
+      - ./migrations/redpanda/init-redpanda-topics.sh:/init-redpanda-topics.sh
+    working_dir: /
+    entrypoint: /bin/bash
+    command: /init-redpanda-topics.sh
+    network_mode: service:redpanda
+
+  redpanda-console:
+    image: redpandadata/console:latest
+    profiles:
+      - dev
+    depends_on:
+      - redpanda
+    ports:
+      - "8085:8080"
+    environment:
+      KAFKA_BROKERS: redpanda:9092
+      KAFKA_TLS_ENABLED: "false"
+      KAFKA_SASL_ENABLED: "false"
+      CONNECT_ENABLED: "false"
+      SCHEMAREGISTRY_ENABLED: "false"
+      REDPANDA_ADMINAPI_ENABLED: "false"
 
   clickhouse:
     image: clickhouse/clickhouse-server:24.9-alpine
@@ -72,12 +150,12 @@ services:
     profiles:
       - dev
     depends_on:
-      - kafka
+      - redpanda
     ports:
       - "8084:8080"
     environment:
       KAFKA_CLUSTERS_0_NAME: local
-      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: redpanda:9092
       DYNAMIC_CONFIG_ENABLED: "true"
     healthcheck:
       test: ["CMD", "wget", "--spider", "http://kafka-ui:8080/"]
@@ -129,8 +207,10 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      kafka:
+      redpanda:
         condition: service_healthy
+      redpanda-init:
+        condition: service_completed_successfully
       clickhouse:
         condition: service_healthy
       temporal:
@@ -141,7 +221,8 @@ services:
       - FLEXPRICE_DEPLOYMENT_MODE=api
       # Override config.yaml settings for containerized environment
       - FLEXPRICE_POSTGRES_HOST=postgres
-      - FLEXPRICE_KAFKA_BROKERS=kafka:9092
+      - FLEXPRICE_POSTGRES_READER_HOST=postgres
+      - FLEXPRICE_KAFKA_BROKERS=redpanda:9092
       - FLEXPRICE_CLICKHOUSE_ADDRESS=clickhouse:9000
       - FLEXPRICE_TEMPORAL_ADDRESS=temporal:7233
     volumes:
@@ -153,8 +234,10 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      kafka:
+      redpanda:
         condition: service_healthy
+      redpanda-init:
+        condition: service_completed_successfully
       clickhouse:
         condition: service_healthy
       temporal:
@@ -163,7 +246,8 @@ services:
       - FLEXPRICE_DEPLOYMENT_MODE=consumer
       # Override config.yaml settings for containerized environment
       - FLEXPRICE_POSTGRES_HOST=postgres
-      - FLEXPRICE_KAFKA_BROKERS=kafka:9092
+      - FLEXPRICE_POSTGRES_READER_HOST=postgres
+      - FLEXPRICE_KAFKA_BROKERS=redpanda:9092
       - FLEXPRICE_CLICKHOUSE_ADDRESS=clickhouse:9000
       - FLEXPRICE_TEMPORAL_ADDRESS=temporal:7233
     volumes:
@@ -175,8 +259,10 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      kafka:
+      redpanda:
         condition: service_healthy
+      redpanda-init:
+        condition: service_completed_successfully
       clickhouse:
         condition: service_healthy
       temporal:
@@ -185,7 +271,8 @@ services:
       - FLEXPRICE_DEPLOYMENT_MODE=temporal_worker
       # Override config.yaml settings for containerized environment
       - FLEXPRICE_POSTGRES_HOST=postgres
-      - FLEXPRICE_KAFKA_BROKERS=kafka:9092
+      - FLEXPRICE_POSTGRES_READER_HOST=postgres
+      - FLEXPRICE_KAFKA_BROKERS=redpanda:9092
       - FLEXPRICE_CLICKHOUSE_ADDRESS=clickhouse:9000
       - FLEXPRICE_TEMPORAL_ADDRESS=temporal:7233
     volumes:
@@ -195,4 +282,5 @@ services:
 volumes:
   postgres-data:
   kafka-data:
+  redpanda-data:
   clickhouse-data:

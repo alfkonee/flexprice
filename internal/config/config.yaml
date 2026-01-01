@@ -20,8 +20,9 @@ auth:
         is_active: true
 
 kafka:
-  brokers: "localhost:29092" # For local mode
-  # Will be overridden by FLEXPRICE_KAFKA_BROKERS env var in Docker
+  brokers:
+    - "redpanda:9092" # Default to redpanda, can be overridden by FLEXPRICE_KAFKA_BROKERS
+  # Override by setting: FLEXPRICE_KAFKA_BROKERS=localhost:29092 for local development
   consumer_group: "flexprice-consumer-local"
   topic: "events"
   topic_lazy: "events_lazy"
