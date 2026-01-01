@@ -108,9 +108,19 @@ kafka:
       replicationFactor: 1
 
 # Temporal
+# Note: For minimal development, use an external Temporal or Temporal Cloud
+# Installing Temporal requires PostgreSQL database configuration
 temporal:
   operator:
+    install: false  # Don't install Temporal chart (requires database setup)
+    enabled: true   # Still enable Temporal features (connect to external instance)
+  # For development, you can run Temporal locally with:
+  # docker run --rm -p 7233:7233 temporalio/auto-setup:latest
+  external:
     enabled: true
+    address: "temporal:7233"  # Update to your Temporal address
+    namespace: "default"
+    tls: false
 
 # Logging
 observability:

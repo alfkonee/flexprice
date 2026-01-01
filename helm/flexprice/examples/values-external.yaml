@@ -82,7 +82,8 @@ postgres:
     existingSecret: "flexprice-postgres-credentials"
     passwordKey: "password"
   operator:
-    enabled: false
+    install: false  # Do not install operator as a dependency
+    enabled: false  # Do not deploy PostgreSQL using operator
   maxOpenConns: 25
   maxIdleConns: 10
   connMaxLifetimeMinutes: 30
@@ -99,7 +100,8 @@ clickhouse:
     existingSecret: "flexprice-clickhouse-credentials"
     passwordKey: "password"
   operator:
-    enabled: false
+    install: false  # Do not install operator as a dependency
+    enabled: false  # Do not deploy ClickHouse using operator
 
 # Use external Kafka
 kafka:
@@ -118,7 +120,8 @@ kafka:
       userKey: "username"
       passwordKey: "password"
   operator:
-    enabled: false
+    install: false  # Do not install operator as a dependency
+    enabled: false  # Do not deploy Kafka using operator
   consumerGroup: "flexprice-consumer-prod"
   clientId: "flexprice-client-prod"
 
@@ -133,7 +136,8 @@ temporal:
     existingSecret: "flexprice-temporal-credentials"
     apiKeySecretKey: "api-key"
   operator:
-    enabled: false
+    install: false  # Do not install Temporal as a dependency
+    enabled: false  # Do not deploy Temporal using chart
   taskQueue: "billing-task-queue"
   clientName: "flexprice-client-prod"
 

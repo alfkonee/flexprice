@@ -89,19 +89,19 @@ data:
       address: {{ include "flexprice.temporal.address" . | quote }}
       tls: {{ include "flexprice.temporal.tls" . }}
       namespace: {{ include "flexprice.temporal.namespace" . | quote }}
-      task_queue: {{ .Values.temporal.taskQueue | quote }}
-      client_name: {{ .Values.temporal.clientName | quote }}
+      task_queue: {{ dig "taskQueue" "billing-task-queue" .Values.temporal | quote }}
+      client_name: {{ dig "clientName" "flexprice-client" .Values.temporal | quote }}
       retry:
-        initial_interval_seconds: {{ .Values.temporal.retry.initialIntervalSeconds }}
-        max_interval_seconds: {{ .Values.temporal.retry.maxIntervalSeconds }}
-        max_attempts: {{ .Values.temporal.retry.maxAttempts }}
-        backoff_coefficient: {{ .Values.temporal.retry.backoffCoefficient }}
+        initial_interval_seconds: {{ dig "retry" "initialIntervalSeconds" 1 .Values.temporal }}
+        max_interval_seconds: {{ dig "retry" "maxIntervalSeconds" 10 .Values.temporal }}
+        max_attempts: {{ dig "retry" "maxAttempts" 3 .Values.temporal }}
+        backoff_coefficient: {{ dig "retry" "backoffCoefficient" 2.0 .Values.temporal }}
       connection:
-        dial_timeout_seconds: {{ .Values.temporal.connection.dialTimeoutSeconds }}
-        retry_max_attempts: {{ .Values.temporal.connection.retryMaxAttempts }}
-        retry_initial_interval_seconds: {{ .Values.temporal.connection.retryInitialIntervalSeconds }}
-        retry_max_interval_seconds: {{ .Values.temporal.connection.retryMaxIntervalSeconds }}
-        retry_backoff_coefficient: {{ .Values.temporal.connection.retryBackoffCoefficient }}
+        dial_timeout_seconds: {{ dig "connection" "dialTimeoutSeconds" 5 .Values.temporal }}
+        retry_max_attempts: {{ dig "connection" "retryMaxAttempts" 5 .Values.temporal }}
+        retry_initial_interval_seconds: {{ dig "connection" "retryInitialIntervalSeconds" 1 .Values.temporal }}
+        retry_max_interval_seconds: {{ dig "connection" "retryMaxIntervalSeconds" 10 .Values.temporal }}
+        retry_backoff_coefficient: {{ dig "connection" "retryBackoffCoefficient" 1.5 .Values.temporal }}
 
     s3:
       enabled: {{ .Values.s3.enabled }}

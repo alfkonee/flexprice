@@ -76,15 +76,15 @@ Environment variables for FlexPrice containers
 - name: FLEXPRICE_TEMPORAL_TLS
   value: {{ include "flexprice.temporal.tls" . | quote }}
 - name: FLEXPRICE_TEMPORAL_TASK_QUEUE
-  value: {{ .Values.temporal.taskQueue | quote }}
+  value: {{ dig "taskQueue" "billing-task-queue" .Values.temporal | quote }}
 - name: FLEXPRICE_TEMPORAL_CLIENT_NAME
-  value: {{ .Values.temporal.clientName | quote }}
-{{- if or .Values.temporal.external.apiKey (and .Values.temporal.external.existingSecret .Values.temporal.external.apiKeySecretKey) }}
+  value: {{ dig "clientName" "flexprice-client" .Values.temporal | quote }}
+{{- if or (dig "external" "apiKey" "" .Values.temporal) (and (dig "external" "existingSecret" "" .Values.temporal) (dig "external" "apiKeySecretKey" "" .Values.temporal)) }}
 - name: FLEXPRICE_TEMPORAL_API_KEY
   valueFrom:
     secretKeyRef:
       name: {{ include "flexprice.temporal.secretName" . }}
-      key: {{ if .Values.temporal.external.existingSecret }}{{ .Values.temporal.external.apiKeySecretKey }}{{ else }}api-key{{ end }}
+      key: {{ if (dig "external" "existingSecret" "" .Values.temporal) }}{{ .Values.temporal.external.apiKeySecretKey }}{{ else }}api-key{{ end }}
 {{- end }}
 
 # Auth configuration

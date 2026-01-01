@@ -1,0 +1,74 @@
+---
+# Helm Test: Verify ClickHouse Connectivity
+# This test checks that FlexPrice can connect to ClickHouse
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "flexprice.fullname" . }}-test-clickhouse
+  labels:
+    {{- include "flexprice.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": before-this,failed
+spec:
+  serviceAccountName: {{ include "flexprice.serviceAccountName" . }}
+  containers:
+    - name: test-clickhouse-connectivity
+      image: clickhouse/clickhouse-client:latest
+      imagePullPolicy: IfNotPresent
+      env:
+        {{- if .Values.clickhouse.external.enabled }}
+        {{- $chAddress := split ":" .Values.clickhouse.external.address }}
+        - name: CH_HOST
+          value: {{ index $chAddress "_0" | quote }}
+        - name: CH_PORT
+          value: {{ index $chAddress "_1" | default "9000" | quote }}
+        - name: CH_USER
+          value: {{ .Values.clickhouse.external.user | quote }}
+        {{- if .Values.clickhouse.external.password }}
+        - name: CH_PASSWORD
+          value: {{ .Values.clickhouse.external.password | quote }}
+        {{- else if .Values.clickhouse.external.existingSecret }}
+        - name: CH_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.clickhouse.external.existingSecret }}
+              key: {{ .Values.clickhouse.external.passwordKey | default "password" }}
+        {{- end }}
+        {{- else if .Values.clickhouse.operator.enabled }}
+        - name: CH_HOST
+          value: {{ include "flexprice.fullname" . }}-clickhouse
+        - name: CH_PORT
+          value: "9000"
+        - name: CH_USER
+          value: {{ .Values.clickhouse.user | quote }}
+        - name: CH_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "flexprice.fullname" . }}-clickhouse-credentials
+              key: password
+        {{- end }}
+      command:
+        - sh
+        - -c
+        - |
+          echo "Testing ClickHouse connectivity..."
+          
+          # Wait for ClickHouse to be available
+          for i in {1..30}; do
+            if clickhouse-client --host "$CH_HOST" --port "$CH_PORT" --user "$CH_USER" --password "$CH_PASSWORD" --query "SELECT 1" > /dev/null 2>&1; then
+              echo "✓ ClickHouse is ready and responding"
+              
+              # Test version query
+              if clickhouse-client --host "$CH_HOST" --port "$CH_PORT" --user "$CH_USER" --password "$CH_PASSWORD" --query "SELECT version();" > /dev/null 2>&1; then
+                echo "✓ Can query ClickHouse version"
+                exit 0
+              fi
+            fi
+            echo "Attempt $i/30: waiting for ClickHouse..."
+            sleep 2
+          done
+          
+          echo "✗ ClickHouse failed to become ready"
+          exit 1
+  restartPolicy: Never

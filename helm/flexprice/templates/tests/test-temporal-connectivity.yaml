@@ -1,0 +1,52 @@
+---
+# Helm Test: Verify Temporal Connectivity
+# This test checks that FlexPrice can connect to Temporal
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "flexprice.fullname" . }}-test-temporal
+  labels:
+    {{- include "flexprice.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": before-this,failed
+spec:
+  serviceAccountName: {{ include "flexprice.serviceAccountName" . }}
+  containers:
+    - name: test-temporal-connectivity
+      image: curlimages/curl:latest
+      imagePullPolicy: IfNotPresent
+      env:
+        - name: TEMPORAL_ADDRESS
+          value: {{ include "flexprice.temporal.address" . | quote }}
+      command:
+        - sh
+        - -c
+        - |
+          echo "Testing Temporal connectivity..."
+          
+          TEMPORAL_HOST=$(echo "$TEMPORAL_ADDRESS" | cut -d: -f1)
+          TEMPORAL_PORT=$(echo "$TEMPORAL_ADDRESS" | cut -d: -f2)
+          
+          echo "Temporal Address: $TEMPORAL_HOST:$TEMPORAL_PORT"
+          
+          # Test TCP connectivity
+          for i in {1..30}; do
+            if curl -s telnet://"$TEMPORAL_HOST":"$TEMPORAL_PORT" 2>&1 | grep -q "Connected"; then
+              echo "✓ Temporal frontend is reachable"
+              exit 0
+            fi
+            
+            # Alternative: try netcat if available
+            if nc -z "$TEMPORAL_HOST" "$TEMPORAL_PORT" 2>/dev/null; then
+              echo "✓ Temporal frontend is reachable"
+              exit 0
+            fi
+            
+            echo "Attempt $i/30: waiting for Temporal..."
+            sleep 2
+          done
+          
+          echo "✗ Temporal frontend failed to become reachable"
+          exit 1
+  restartPolicy: Never

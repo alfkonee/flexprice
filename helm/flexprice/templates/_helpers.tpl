@@ -230,7 +230,7 @@ Get Kafka SASL enabled
 Get Temporal address
 */}}
 {{- define "flexprice.temporal.address" -}}
-{{- if .Values.temporal.external.enabled }}
+{{- if (dig "external" "enabled" false .Values.temporal) }}
 {{- .Values.temporal.external.address }}
 {{- else }}
 {{- printf "%s-temporal-frontend:7233" (include "flexprice.fullname" .) }}
@@ -241,10 +241,10 @@ Get Temporal address
 Get Temporal namespace
 */}}
 {{- define "flexprice.temporal.namespace" -}}
-{{- if .Values.temporal.external.enabled }}
+{{- if (dig "external" "enabled" false .Values.temporal) }}
 {{- .Values.temporal.external.namespace }}
 {{- else }}
-{{- .Values.temporal.namespace }}
+{{- dig "namespace" "default" .Values.temporal }}
 {{- end }}
 {{- end }}
 
@@ -252,7 +252,7 @@ Get Temporal namespace
 Get Temporal TLS setting
 */}}
 {{- define "flexprice.temporal.tls" -}}
-{{- if .Values.temporal.external.enabled }}
+{{- if (dig "external" "enabled" false .Values.temporal) }}
 {{- .Values.temporal.external.tls }}
 {{- else }}
 {{- false }}
@@ -307,7 +307,7 @@ Kafka secret name
 Temporal secret name
 */}}
 {{- define "flexprice.temporal.secretName" -}}
-{{- if and .Values.temporal.external.enabled .Values.temporal.external.existingSecret }}
+{{- if and (dig "external" "enabled" false .Values.temporal) (dig "external" "existingSecret" "" .Values.temporal) }}
 {{- .Values.temporal.external.existingSecret }}
 {{- else }}
 {{- printf "%s-temporal-credentials" (include "flexprice.fullname" .) }}

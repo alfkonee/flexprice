@@ -1,0 +1,78 @@
+---
+# Helm Test: Verify PostgreSQL Connectivity
+# This test checks that FlexPrice can connect to PostgreSQL
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "flexprice.fullname" . }}-test-postgres
+  labels:
+    {{- include "flexprice.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": before-this,failed
+spec:
+  serviceAccountName: {{ include "flexprice.serviceAccountName" . }}
+  containers:
+    - name: test-postgres-connectivity
+      image: postgres:17-alpine
+      imagePullPolicy: IfNotPresent
+      env:
+        {{- if .Values.postgres.external.enabled }}
+        - name: PGHOST
+          value: {{ .Values.postgres.external.host | quote }}
+        - name: PGPORT
+          value: {{ .Values.postgres.external.port | default 5432 | quote }}
+        - name: PGUSER
+          value: {{ .Values.postgres.external.user | quote }}
+        {{- if .Values.postgres.external.password }}
+        - name: PGPASSWORD
+          value: {{ .Values.postgres.external.password | quote }}
+        {{- else if .Values.postgres.external.existingSecret }}
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.postgres.external.existingSecret }}
+              key: {{ .Values.postgres.external.passwordKey | default "password" }}
+        {{- end }}
+        {{- else if .Values.postgres.operator.enabled }}
+        - name: PGHOST
+          value: {{ include "flexprice.fullname" . }}-postgres
+        - name: PGPORT
+          value: "5432"
+        - name: PGUSER
+          value: {{ .Values.postgres.user | quote }}
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "flexprice.fullname" . }}-postgres-credentials
+              key: password
+        {{- end }}
+        - name: PGDATABASE
+          value: {{ .Values.postgres.database | quote }}
+      command:
+        - sh
+        - -c
+        - |
+          echo "Testing PostgreSQL connectivity..."
+          
+          # Wait for PostgreSQL to be available
+          for i in {1..30}; do
+            if pg_isready -h "$PGHOST" -p "$PGPORT" -U "$PGUSER"; then
+              echo "✓ PostgreSQL is ready"
+              
+              # Test actual connection
+              if psql -c "SELECT version();" > /dev/null 2>&1; then
+                echo "✓ Can connect to PostgreSQL database"
+                exit 0
+              else
+                echo "✗ PostgreSQL is ready but cannot connect"
+                exit 1
+              fi
+            fi
+            echo "Attempt $i/30: waiting for PostgreSQL..."
+            sleep 2
+          done
+          
+          echo "✗ PostgreSQL failed to become ready"
+          exit 1
+  restartPolicy: Never

@@ -190,6 +190,29 @@ temporal:
     enabled: true
   namespace: "default"
   taskQueue: "billing-task-queue"
+  # Temporal subchart configuration (when operator.install is true)
+  # Note: You must configure the database connection for Temporal
+  server:
+    config:
+      persistence:
+        default:
+          driver: "sql"
+          sql:
+            driver: "postgres12"
+            host: "flexprice-postgres"  # Uses the same PostgreSQL as FlexPrice
+            port: 5432
+            database: "temporal"
+            user: "temporal"
+            password: "temporal-password"  # Change this in production!
+        visibility:
+          driver: "sql"
+          sql:
+            driver: "postgres12"
+            host: "flexprice-postgres"
+            port: 5432
+            database: "temporal_visibility"
+            user: "temporal"
+            password: "temporal-password"  # Change this in production!
 
 # Authentication
 auth:

@@ -1,0 +1,61 @@
+---
+# Helm Test: Verify Kafka Connectivity
+# This test checks that FlexPrice can connect to Kafka/Redpanda
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "flexprice.fullname" . }}-test-kafka
+  labels:
+    {{- include "flexprice.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": before-this,failed
+spec:
+  serviceAccountName: {{ include "flexprice.serviceAccountName" . }}
+  containers:
+    - name: test-kafka-connectivity
+      image: confluentinc/cp-kafka:7.5.0
+      imagePullPolicy: IfNotPresent
+      env:
+        {{- if .Values.kafka.external.enabled }}
+        - name: KAFKA_BROKERS
+          value: {{ .Values.kafka.external.brokers | join "," | quote }}
+        {{- else if .Values.kafka.operator.enabled }}
+        - name: KAFKA_BROKERS
+          value: {{ include "flexprice.fullname" . }}-redpanda:9092
+        {{- end }}
+      command:
+        - sh
+        - -c
+        - |
+          echo "Testing Kafka connectivity..."
+          
+          # Install kafka-broker-api-versions tool
+          apt-get update -qq && apt-get install -y -qq netcat-openbsd > /dev/null 2>&1
+          
+          BROKERS="${KAFKA_BROKERS//,/ }"
+          
+          # Test connectivity to each broker
+          for broker in $BROKERS; do
+            host=$(echo $broker | cut -d: -f1)
+            port=$(echo $broker | cut -d: -f2)
+            
+            echo "Testing broker: $host:$port"
+            
+            for i in {1..30}; do
+              if nc -z "$host" "$port" 2>/dev/null; then
+                echo "✓ Connected to Kafka broker: $host:$port"
+                break
+              fi
+              if [ $i -eq 30 ]; then
+                echo "✗ Failed to connect to broker: $host:$port"
+                exit 1
+              fi
+              echo "  Attempt $i/30..."
+              sleep 2
+            done
+          done
+          
+          echo "✓ All Kafka brokers are reachable"
+          exit 0
+  restartPolicy: Never
