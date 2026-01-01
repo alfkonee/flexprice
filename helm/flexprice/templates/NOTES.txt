@@ -1,0 +1,84 @@
+1. Verify the configuration:
+
+   helm template {{ .Release.Name }} . --debug
+
+2. Check the deployed resources:
+
+   kubectl get all -l app.kubernetes.io/instance={{ .Release.Name }}
+
+3. Access the FlexPrice API:
+{{- if .Values.flexprice.ingress.enabled }}
+   {{- range .Values.flexprice.ingress.hosts }}
+   http{{ if $.Values.flexprice.ingress.tls }}s{{ end }}://{{ .host }}
+   {{- end }}
+{{- else if eq .Values.flexprice.service.type "NodePort" }}
+   export NODE_PORT=$(kubectl get --namespace {{ .Release.Namespace }} -o jsonpath="{.spec.ports[0].nodePort}" services {{ include "flexprice.fullname" . }}-api)
+   export NODE_IP=$(kubectl get nodes --namespace {{ .Release.Namespace }} -o jsonpath="{.items[0].status.addresses[0].address}")
+   echo http://$NODE_IP:$NODE_PORT
+{{- else if eq .Values.flexprice.service.type "LoadBalancer" }}
+   NOTE: It may take a few minutes for the LoadBalancer IP to be available.
+   You can watch the status by running:
+   kubectl get --namespace {{ .Release.Namespace }} svc -w {{ include "flexprice.fullname" . }}-api
+{{- else }}
+   kubectl port-forward --namespace {{ .Release.Namespace }} svc/{{ include "flexprice.fullname" . }}-api 8080:{{ .Values.flexprice.service.port }}
+   Then access: http://localhost:8080
+{{- end }}
+
+4. Check the health endpoint:
+   curl http://localhost:8080/health
+
+5. View logs:
+   kubectl logs -l app.kubernetes.io/instance={{ .Release.Name }},app.kubernetes.io/component=api -f
+
+{{- if and .Values.postgres.operator.enabled (not .Values.postgres.external.enabled) }}
+
+6. PostgreSQL (Stackgres):
+   kubectl get sgcluster {{ .Values.postgres.operator.name }}
+{{- end }}
+
+{{- if and .Values.clickhouse.operator.enabled (not .Values.clickhouse.external.enabled) }}
+
+7. ClickHouse:
+   kubectl get chi {{ .Values.clickhouse.operator.name }}
+{{- end }}
+
+{{- if and .Values.kafka.operator.enabled (not .Values.kafka.external.enabled) }}
+
+8. Redpanda:
+   kubectl get redpanda {{ .Values.kafka.operator.name }}
+{{- end }}
+
+IMPORTANT: Ensure the following operators are installed before deploying:
+{{- if and .Values.postgres.operator.enabled (not .Values.postgres.external.enabled) (not .Values.postgres.operator.install) }}
+- Stackgres Operator (https://stackgres.io/install)
+  Or set postgres.operator.install=true to install via this chart
+{{- end }}
+{{- if and .Values.clickhouse.operator.enabled (not .Values.clickhouse.external.enabled) (not .Values.clickhouse.operator.install) }}
+- Altinity ClickHouse Operator (https://github.com/Altinity/clickhouse-operator)
+  Or set clickhouse.operator.install=true to install via this chart
+{{- end }}
+{{- if and .Values.kafka.operator.enabled (not .Values.kafka.external.enabled) (not .Values.kafka.operator.install) }}
+- Redpanda Operator (https://docs.redpanda.com/current/deploy/deployment-option/self-hosted/kubernetes/)
+  Or set kafka.operator.install=true to install via this chart
+{{- end }}
+{{- if and .Values.temporal.operator.enabled (not .Values.temporal.external.enabled) (not .Values.temporal.operator.install) }}
+- Temporal (https://github.com/temporalio/helm-charts)
+  Or set temporal.operator.install=true to install via this chart
+{{- end }}
+
+{{- if or .Values.postgres.operator.install .Values.clickhouse.operator.install .Values.kafka.operator.install .Values.temporal.operator.install }}
+
+OPERATORS INSTALLED BY THIS CHART:
+{{- if .Values.postgres.operator.install }}
+- Stackgres Operator
+{{- end }}
+{{- if .Values.clickhouse.operator.install }}
+- Altinity ClickHouse Operator
+{{- end }}
+{{- if .Values.kafka.operator.install }}
+- Redpanda Operator
+{{- end }}
+{{- if .Values.temporal.operator.install }}
+- Temporal
+{{- end }}
+{{- end }}

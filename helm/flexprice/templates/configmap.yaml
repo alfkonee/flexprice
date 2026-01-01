@@ -1,0 +1,183 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "flexprice.fullname" . }}-config
+  labels:
+    {{- include "flexprice.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    deployment:
+      mode: {{ .Values.flexprice.deploymentMode | quote }}
+
+    server:
+      address: ":8080"
+
+    auth:
+      provider: {{ .Values.auth.provider | quote }}
+      api_key:
+        header: {{ .Values.auth.apiKey.header | quote }}
+
+    kafka:
+      brokers:
+        - {{ include "flexprice.kafka.brokers" . | quote }}
+      consumer_group: {{ .Values.kafka.consumerGroup | quote }}
+      topic: "events"
+      topic_lazy: "events_lazy"
+      tls: {{ include "flexprice.kafka.tls" . }}
+      use_sasl: {{ include "flexprice.kafka.saslEnabled" . }}
+      client_id: {{ .Values.kafka.clientId | quote }}
+
+    clickhouse:
+      address: {{ include "flexprice.clickhouse.address" . | quote }}
+      tls: {{ include "flexprice.clickhouse.tls" . }}
+      username: {{ include "flexprice.clickhouse.user" . | quote }}
+      database: {{ include "flexprice.clickhouse.database" . | quote }}
+
+    postgres:
+      host: {{ include "flexprice.postgres.host" . | quote }}
+      port: {{ include "flexprice.postgres.port" . }}
+      reader_host: {{ include "flexprice.postgres.readerHost" . | quote }}
+      reader_port: {{ include "flexprice.postgres.port" . }}
+      user: {{ include "flexprice.postgres.user" . | quote }}
+      dbname: {{ include "flexprice.postgres.database" . | quote }}
+      sslmode: {{ include "flexprice.postgres.sslMode" . | quote }}
+      max_open_conns: {{ .Values.postgres.maxOpenConns }}
+      max_idle_conns: {{ .Values.postgres.maxIdleConns }}
+      conn_max_lifetime_minutes: {{ .Values.postgres.connMaxLifetimeMinutes }}
+      auto_migrate: false
+
+    sentry:
+      enabled: {{ .Values.observability.sentry.enabled }}
+      {{- if .Values.observability.sentry.enabled }}
+      dsn: {{ .Values.observability.sentry.dsn | quote }}
+      environment: {{ .Values.observability.sentry.environment | quote }}
+      sample_rate: {{ .Values.observability.sentry.sampleRate }}
+      {{- end }}
+
+    pyroscope:
+      enabled: {{ .Values.observability.pyroscope.enabled }}
+      {{- if .Values.observability.pyroscope.enabled }}
+      server_address: {{ .Values.observability.pyroscope.serverAddress | quote }}
+      application_name: {{ .Values.observability.pyroscope.applicationName | quote }}
+      sample_rate: {{ .Values.observability.pyroscope.sampleRate }}
+      {{- end }}
+
+    event:
+      publish_destination: "kafka"
+
+    dynamodb:
+      in_use: false
+
+    logging:
+      level: {{ .Values.observability.logging.level | quote }}
+
+    webhook:
+      enabled: {{ .Values.webhook.enabled }}
+      topic: {{ .Values.webhook.topic | quote }}
+      pubsub: {{ .Values.webhook.pubsub | quote }}
+      consumer_group: {{ .Values.webhook.consumerGroup | quote }}
+      max_retries: {{ .Values.webhook.maxRetries }}
+      initial_interval: {{ .Values.webhook.initialInterval | quote }}
+      max_interval: {{ .Values.webhook.maxInterval | quote }}
+      multiplier: {{ .Values.webhook.multiplier }}
+      max_elapsed_time: {{ .Values.webhook.maxElapsedTime | quote }}
+      svix_config:
+        enabled: {{ .Values.webhook.svix.enabled }}
+        base_url: {{ .Values.webhook.svix.baseUrl | quote }}
+
+    temporal:
+      address: {{ include "flexprice.temporal.address" . | quote }}
+      tls: {{ include "flexprice.temporal.tls" . }}
+      namespace: {{ include "flexprice.temporal.namespace" . | quote }}
+      task_queue: {{ .Values.temporal.taskQueue | quote }}
+      client_name: {{ .Values.temporal.clientName | quote }}
+      retry:
+        initial_interval_seconds: {{ .Values.temporal.retry.initialIntervalSeconds }}
+        max_interval_seconds: {{ .Values.temporal.retry.maxIntervalSeconds }}
+        max_attempts: {{ .Values.temporal.retry.maxAttempts }}
+        backoff_coefficient: {{ .Values.temporal.retry.backoffCoefficient }}
+      connection:
+        dial_timeout_seconds: {{ .Values.temporal.connection.dialTimeoutSeconds }}
+        retry_max_attempts: {{ .Values.temporal.connection.retryMaxAttempts }}
+        retry_initial_interval_seconds: {{ .Values.temporal.connection.retryInitialIntervalSeconds }}
+        retry_max_interval_seconds: {{ .Values.temporal.connection.retryMaxIntervalSeconds }}
+        retry_backoff_coefficient: {{ .Values.temporal.connection.retryBackoffCoefficient }}
+
+    s3:
+      enabled: {{ .Values.s3.enabled }}
+      {{- if .Values.s3.enabled }}
+      region: {{ .Values.s3.region | quote }}
+      invoice:
+        bucket: {{ .Values.s3.invoice.bucket | quote }}
+        presign_expiry_duration: {{ .Values.s3.invoice.presignExpiryDuration | quote }}
+        key_prefix: {{ .Values.s3.invoice.keyPrefix | quote }}
+      {{- end }}
+
+    cache:
+      enabled: {{ .Values.cache.enabled }}
+
+    event_processing:
+      topic: "events"
+      rate_limit: 12
+      consumer_group: "flexprice-consumer"
+
+    event_processing_lazy:
+      topic: "events_lazy"
+      rate_limit: 12
+      consumer_group: "v1_event_processing_lazy"
+
+    event_post_processing:
+      topic: "events_post_processing"
+      rate_limit: 12
+      consumer_group: "v1_events_post_processing"
+      topic_backfill: "events_post_processing_backfill"
+      rate_limit_backfill: 1
+      consumer_group_backfill: "v1_events_post_processing_backfill"
+
+    feature_usage_tracking:
+      topic: "events"
+      rate_limit: 1
+      consumer_group: "v1_feature_tracking_service"
+      topic_backfill: "events_post_processing_backfill"
+      rate_limit_backfill: 1
+      consumer_group_backfill: "v1_feature_tracking_service_backfill"
+
+    feature_usage_tracking_lazy:
+      topic: "events_lazy"
+      rate_limit: 1
+      consumer_group: "v1_feature_tracking_service_lazy"
+
+    costsheet_usage_tracking:
+      topic: "events"
+      rate_limit: 1
+      consumer_group: "v1_costsheet_usage_tracking_service"
+
+    costsheet_usage_tracking_lazy:
+      topic: "events_lazy"
+      rate_limit: 1
+      consumer_group: "v1_costsheet_usage_tracking_service_lazy"
+
+    wallet_balance_alert:
+      topic: "wallet_alert"
+      rate_limit: 1
+      consumer_group: "v1_wallet_alert_service"
+
+    feature_flag:
+      enable_feature_usage_for_analytics: {{ .Values.featureFlags.enableFeatureUsageForAnalytics }}
+      {{- if .Values.featureFlags.forceV1ForTenant }}
+      force_v1_for_tenant: {{ .Values.featureFlags.forceV1ForTenant | quote }}
+      {{- end }}
+
+    email:
+      enabled: {{ .Values.email.enabled }}
+      {{- if .Values.email.enabled }}
+      from_address: {{ .Values.email.fromAddress | quote }}
+      reply_to: {{ .Values.email.replyTo | quote }}
+      calendar_url: {{ .Values.email.calendarUrl | quote }}
+      {{- end }}
+
+    rbac:
+      roles_config_path: {{ .Values.rbac.rolesConfigPath | quote }}
+
+    oauth:
+      redirect_uri: {{ .Values.oauth.redirectUri | quote }}

@@ -1,0 +1,231 @@
+# Example: Using Kubernetes Operators
+# This configuration uses Stackgres, Altinity ClickHouse, and Redpanda operators
+# to provision all dependencies within your Kubernetes cluster.
+# 
+# This example installs all operators as chart dependencies.
+# If operators are already installed, set *.operator.install to false.
+
+# FlexPrice application settings
+flexprice:
+  image:
+    repository: flexprice/flexprice
+    tag: "latest"
+  
+  deploymentMode: "production"
+  
+  api:
+    replicas: 2
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "100m"
+      limits:
+        memory: "1Gi"
+        cpu: "1000m"
+  
+  consumer:
+    replicas: 2
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "100m"
+      limits:
+        memory: "1Gi"
+        cpu: "1000m"
+  
+  worker:
+    replicas: 2
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "100m"
+      limits:
+        memory: "1Gi"
+        cpu: "1000m"
+  
+  ingress:
+    enabled: true
+    className: "nginx"
+    hosts:
+      - host: flexprice.local
+        paths:
+          - path: /
+            pathType: Prefix
+
+# PostgreSQL via Stackgres Operator
+postgres:
+  external:
+    enabled: false
+  operator:
+    # Install the Stackgres operator as a chart dependency
+    install: true
+    # Create the SGCluster CRD
+    enabled: true
+    name: "flexprice-postgres"
+    version: "17"
+    instances: 3
+    storage:
+      size: "100Gi"
+      storageClass: "fast-ssd"
+    resources:
+      requests:
+        memory: "1Gi"
+        cpu: "500m"
+      limits:
+        memory: "4Gi"
+        cpu: "4000m"
+    connectionPooling:
+      enabled: true
+      maxConnections: 400
+    backup:
+      enabled: true
+      retention: 14
+      schedule: "0 2 * * *"
+      storage:
+        type: "s3"
+        bucket: "flexprice-backups"
+        path: "postgres"
+        region: "us-east-1"
+        secretName: "backup-s3-credentials"
+    postgresConfig:
+      max_connections: "400"
+      shared_buffers: "1GB"
+      work_mem: "128MB"
+      maintenance_work_mem: "256MB"
+      effective_cache_size: "3GB"
+  user: "flexprice"
+  password: ""  # Auto-generated
+  database: "flexprice"
+  maxOpenConns: 25
+  maxIdleConns: 10
+
+# ClickHouse via Altinity Operator
+clickhouse:
+  external:
+    enabled: false
+  operator:
+    # Install the Altinity ClickHouse operator as a chart dependency
+    install: true
+    # Create the ClickHouseInstallation CRD
+    enabled: true
+    name: "flexprice-clickhouse"
+    version: "24.9"
+    cluster:
+      shardsCount: 2
+      replicasCount: 2
+    storage:
+      size: "500Gi"
+      storageClass: "fast-ssd"
+    resources:
+      requests:
+        memory: "4Gi"
+        cpu: "2000m"
+      limits:
+        memory: "16Gi"
+        cpu: "8000m"
+    settings:
+      max_memory_usage: "12000000000"
+      max_concurrent_queries: "200"
+    zookeeper:
+      enabled: true
+      replicas: 3
+      storage:
+        size: "20Gi"
+  user: "flexprice"
+  password: ""  # Auto-generated
+  database: "flexprice"
+
+# Redpanda via Redpanda Operator
+kafka:
+  external:
+    enabled: false
+  operator:
+    # Install the Redpanda operator as a chart dependency
+    install: true
+    # Create the Redpanda cluster CRD
+    enabled: true
+    name: "flexprice-redpanda"
+    version: "v24.2.7"
+    replicas: 3
+    storage:
+      size: "200Gi"
+      storageClass: "fast-ssd"
+    resources:
+      cpu: "2"
+      memory: "8Gi"
+    config:
+      autoCreateTopicsEnabled: false
+      groupInitialRebalanceDelayMs: 3000
+    schemaRegistry:
+      enabled: true
+    console:
+      enabled: true
+  consumerGroup: "flexprice-consumer"
+  clientId: "flexprice-client"
+  topics:
+    - name: "events"
+      partitions: 24
+      replicationFactor: 3
+    - name: "events_lazy"
+      partitions: 12
+      replicationFactor: 3
+    - name: "events_post_processing"
+      partitions: 12
+      replicationFactor: 3
+    - name: "system_events"
+      partitions: 6
+      replicationFactor: 3
+    - name: "wallet_alert"
+      partitions: 6
+      replicationFactor: 3
+
+# Temporal (deploy via chart)
+temporal:
+  external:
+    enabled: false
+  operator:
+    # Install Temporal as a chart dependency
+    install: true
+    # Enable Temporal integration
+    enabled: true
+  namespace: "default"
+  taskQueue: "billing-task-queue"
+
+# Authentication
+auth:
+  provider: "flexprice"
+
+# Observability
+observability:
+  sentry:
+    enabled: false
+  pyroscope:
+    enabled: false
+  logging:
+    level: "info"
+
+# Email (disabled by default)
+email:
+  enabled: false
+
+# S3 (disabled by default)
+s3:
+  enabled: false
+
+# Webhook
+webhook:
+  enabled: true
+  pubsub: "kafka"
+
+# Run migrations on install/upgrade
+migrations:
+  enabled: true
+  runAsJob: true
+  clickhouse:
+    enabled: true
+  postgres:
+    enabled: true
+  kafka:
+    enabled: true
+  temporal:
+    enabled: true

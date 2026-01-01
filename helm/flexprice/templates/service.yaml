@@ -1,0 +1,22 @@
+{{- if .Values.flexprice.api.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "flexprice.fullname" . }}-api
+  labels:
+    {{- include "flexprice.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+  {{- with .Values.flexprice.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.flexprice.service.type }}
+  ports:
+    - port: {{ .Values.flexprice.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "flexprice.api.selectorLabels" . | nindent 4 }}
+{{- end }}

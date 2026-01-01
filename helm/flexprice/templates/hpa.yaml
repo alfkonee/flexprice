@@ -1,0 +1,33 @@
+{{- if and .Values.flexprice.autoscaling.enabled .Values.flexprice.api.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "flexprice.fullname" . }}-api
+  labels:
+    {{- include "flexprice.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "flexprice.fullname" . }}-api
+  minReplicas: {{ .Values.flexprice.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.flexprice.autoscaling.maxReplicas }}
+  metrics:
+    {{- if .Values.flexprice.autoscaling.targetCPUUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.flexprice.autoscaling.targetCPUUtilizationPercentage }}
+    {{- end }}
+    {{- if .Values.flexprice.autoscaling.targetMemoryUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.flexprice.autoscaling.targetMemoryUtilizationPercentage }}
+    {{- end }}
+{{- end }}

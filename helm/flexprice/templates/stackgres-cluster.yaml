@@ -1,0 +1,91 @@
+{{/*
+Stackgres PostgreSQL Cluster
+Only created when postgres.operator.enabled is true and postgres.external.enabled is false
+*/}}
+{{- if and .Values.postgres.operator.enabled (not .Values.postgres.external.enabled) }}
+---
+apiVersion: stackgres.io/v1
+kind: SGCluster
+metadata:
+  name: {{ .Values.postgres.operator.name }}
+  labels:
+    {{- include "flexprice.labels" . | nindent 4 }}
+spec:
+  instances: {{ .Values.postgres.operator.instances }}
+  postgres:
+    version: {{ .Values.postgres.operator.version | quote }}
+  pods:
+    persistentVolume:
+      size: {{ .Values.postgres.operator.storage.size | quote }}
+      {{- if .Values.postgres.operator.storage.storageClass }}
+      storageClass: {{ .Values.postgres.operator.storage.storageClass | quote }}
+      {{- else if .Values.global.storageClass }}
+      storageClass: {{ .Values.global.storageClass | quote }}
+      {{- end }}
+    scheduling:
+      nodeSelector: {}
+      tolerations: []
+  configurations:
+    sgPostgresConfig: {{ .Values.postgres.operator.name }}-config
+    sgPoolingConfig: {{ .Values.postgres.operator.name }}-pooling
+  managedSql:
+    scripts:
+      - sgScript: {{ .Values.postgres.operator.name }}-init
+---
+apiVersion: stackgres.io/v1
+kind: SGPostgresConfig
+metadata:
+  name: {{ .Values.postgres.operator.name }}-config
+  labels:
+    {{- include "flexprice.labels" . | nindent 4 }}
+spec:
+  postgresVersion: {{ .Values.postgres.operator.version | quote }}
+  postgresql.conf:
+    {{- range $key, $value := .Values.postgres.operator.postgresConfig }}
+    {{ $key }}: {{ $value | quote }}
+    {{- end }}
+---
+{{- if .Values.postgres.operator.connectionPooling.enabled }}
+apiVersion: stackgres.io/v1
+kind: SGPoolingConfig
+metadata:
+  name: {{ .Values.postgres.operator.name }}-pooling
+  labels:
+    {{- include "flexprice.labels" . | nindent 4 }}
+spec:
+  pgBouncer:
+    pgbouncer.ini:
+      pgbouncer:
+        max_client_conn: {{ .Values.postgres.operator.connectionPooling.maxConnections | quote }}
+        default_pool_size: "50"
+        reserve_pool_size: "25"
+{{- end }}
+---
+apiVersion: stackgres.io/v1
+kind: SGScript
+metadata:
+  name: {{ .Values.postgres.operator.name }}-init
+  labels:
+    {{- include "flexprice.labels" . | nindent 4 }}
+spec:
+  scripts:
+    - name: create-flexprice-database
+      script: |
+        CREATE DATABASE {{ .Values.postgres.database }} OWNER {{ .Values.postgres.user }};
+    - name: create-temporal-database
+      script: |
+        CREATE DATABASE temporal OWNER {{ .Values.postgres.user }};
+        GRANT ALL PRIVILEGES ON DATABASE temporal TO {{ .Values.postgres.user }};
+{{- if .Values.postgres.operator.backup.enabled }}
+---
+apiVersion: stackgres.io/v1beta1
+kind: SGBackup
+metadata:
+  name: {{ .Values.postgres.operator.name }}-backup
+  labels:
+    {{- include "flexprice.labels" . | nindent 4 }}
+spec:
+  sgCluster: {{ .Values.postgres.operator.name }}
+  managedLifecycle: true
+{{- end }}
+{{- end }}
