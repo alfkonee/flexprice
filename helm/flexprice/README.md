@@ -1,6 +1,22 @@
 # FlexPrice Helm Chart
 
-This Helm chart deploys the FlexPrice backend with all its dependencies on Kubernetes.
+Production-ready Helm chart for deploying FlexPrice backend with flexible infrastructure options.
+
+## Quick Start
+
+```bash
+# Test the chart (before installing)
+./test-chart.sh              # Linux/macOS
+.\test-chart.ps1             # Windows
+
+# Install with all operators
+helm install flexprice . \
+  --set postgres.operator.install=true \
+  --set clickhouse.operator.install=true \
+  --set kafka.operator.install=true
+```
+
+See [TESTING.md](TESTING.md) for complete testing guide and [USE_CASES.md](USE_CASES.md) for deployment scenarios.
 
 ## Prerequisites
 
@@ -346,6 +362,11 @@ Tests automatically detect your deployment configuration (external services vs o
 - ✅ **test-deployments-status** - Confirms all 3 deployments (api, consumer, worker) are ready
 
 For detailed testing documentation, see [QUICK_TEST.md](QUICK_TEST.md) for quick reference or [HELM_TESTS.md](HELM_TESTS.md) for comprehensive guide.
+
+## Documentation
+
+- **[TESTING.md](TESTING.md)** - Complete testing guide (scripts, CI/CD, post-deployment tests)
+- **[USE_CASES.md](USE_CASES.md)** - Detailed deployment scenarios and configurations
 
 ## Production Recommendations
 

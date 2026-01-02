@@ -1,22 +1,55 @@
-# FlexPrice Helm Chart - Testing & Validation Guide
+# FlexPrice Helm Chart - Testing Guide
 
-This document provides comprehensive testing and validation procedures for all FlexPrice Helm chart use cases.
+Complete testing and validation guide for the FlexPrice Helm chart.
 
 ## Quick Start
 
-Run all tests:
+### Run All Tests
 
+**Linux/macOS:**
 ```bash
-bash test-chart.sh
+cd helm/flexprice
+chmod +x test-chart.sh
+./test-chart.sh
 ```
 
-## Test Files
+**Windows PowerShell:**
+```powershell
+cd helm/flexprice
+.\test-chart.ps1
+```
 
-| File | Purpose |
-|------|---------|
-| `test-chart.sh` | Automated bash test suite (Linux/macOS) |
-| `test-config.yaml` | Validation rules and test configuration |
-| `USE_CASES.md` | Detailed use case documentation |
+**Expected Result:**
+```
+✓ PASSED: All 6 tests
+Total: 6/6 passed in < 2 minutes
+```
+
+## Test Scripts
+
+| Script | Platform | Purpose |
+|--------|----------|---------|
+| `test-chart.sh` | Linux/macOS/Git Bash | Automated test suite with 6 tests |
+| `test-chart.ps1` | Windows PowerShell | Same tests, PowerShell version |
+| `test-config.yaml` | All | Test configuration |
+
+### Script Options
+
+**Bash:**
+```bash
+./test-chart.sh           # Run all tests
+./test-chart.sh -v        # Verbose mode with error details
+./test-chart.sh -h        # Show help
+./test-chart.sh -d <path> # Custom chart directory
+./test-chart.sh -n <name> # Custom chart name
+```
+
+**PowerShell:**
+```powershell
+.\test-chart.ps1          # Run all tests
+.\test-chart.ps1 -Verbose # Verbose mode with error details
+Get-Help .\test-chart.ps1 # Show help
+```
 
 ## Test Categories
 
@@ -536,28 +569,81 @@ Failed: 0
 All tests passed!
 ```
 
-## Maintenance
 
-### Regular Testing Schedule
+## Post-Deployment Testing (Helm Test)
 
-- [ ] Run tests on every code change
-- [ ] Run tests on dependency updates
-- [ ] Monthly full validation on real clusters
-- [ ] Update tests when use cases change
+After deploying the chart, run built-in Helm tests:
 
-### Updating Tests
+```bash
+helm test <release-name> -n <namespace>
+```
 
-When adding new features:
+### Available Test Pods
 
-1. Create new use case in `USE_CASES.md`
-2. Add new test in `test-chart.sh`
-3. Add validation rules in `test-config.yaml`
-4. Document in this file
-5. Run full test suite
-6. Commit all changes
+The chart includes 6 test pods that validate runtime connectivity:
 
-## References
+| Test | Purpose | Validates |
+|------|---------|-----------|
+| `test-deployment` | Pod scheduling | FlexPrice pods are running |
+| `test-postgres` | Database | PostgreSQL connectivity |
+| `test-clickhouse` | Analytics | ClickHouse connectivity |
+| `test-kafka` | Messaging | Kafka/Redpanda connectivity |
+| `test-temporal` | Workflow | Temporal connectivity |
+| `test-api-health` | API | HTTP health endpoint |
 
-- [Helm Chart Testing Best Practices](https://helm.sh/docs/helm/helm_template/)
-- [Kubernetes Testing Documentation](https://kubernetes.io/docs/)
-- [FlexPrice Documentation](../README.md)
+**Example:**
+```bash
+helm test my-flexprice -n flexprice
+
+# View test logs
+kubectl logs my-flexprice-test-deployment -n flexprice
+kubectl logs my-flexprice-test-api-health -n flexprice
+```
+
+## CI/CD Integration
+
+### GitHub Actions
+
+```yaml
+name: Helm Tests
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: azure/setup-helm@v3
+        with:
+          version: 'latest'
+      - name: Run Tests
+        run: |
+          cd helm/flexprice
+          chmod +x test-chart.sh
+          ./test-chart.sh
+```
+
+### GitLab CI
+
+```yaml
+helm:test:
+  image: alpine/helm:latest
+  script:
+    - cd helm/flexprice
+    - chmod +x test-chart.sh
+    - ./test-chart.sh -v
+```
+
+### Azure Pipelines
+
+```yaml
+steps:
+  - task: HelmInstaller@0
+    inputs:
+      helmVersion: 'latest'
+  - script: |
+      cd helm/flexprice
+      chmod +x test-chart.sh
+      ./test-chart.sh -v
+    displayName: 'Test Helm Chart'
+```
