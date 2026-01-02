@@ -18,7 +18,7 @@ ENV CGO_ENABLED=0 \
 RUN go build -ldflags="-w -s" -o app cmd/server/main.go
 
 # Final stage
-FROM ghcr.io/typst/typst:v0.14.2 AS typst
+FROM ghcr.io/typst/typst:0.14.2 AS typst
 FROM alpine
 RUN apk --no-cache add ca-certificates tzdata
 
