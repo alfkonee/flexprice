@@ -19,7 +19,7 @@ global:
 # -----------------------------------------------------------------------------
 flexprice:
   image:
-    repository: flexprice/flexprice
+    repository: ghcr.io/alfkonee/flexprice
     tag: "latest"
     pullPolicy: IfNotPresent
 
