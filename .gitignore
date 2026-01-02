@@ -136,3 +136,4 @@ server
 # custom local files
 lambdas/*
 
+helm/flexprice/charts
