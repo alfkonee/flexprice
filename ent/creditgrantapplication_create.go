@@ -364,6 +364,11 @@ func (cgac *CreditGrantApplicationCreate) check() error {
 			return &ValidationError{Name: "application_status", err: fmt.Errorf(`ent: validator failed for field "CreditGrantApplication.application_status": %w`, err)}
 		}
 	}
+	if v, ok := cgac.mutation.ApplicationStatus(); ok {
+		if err := v.Validate(); err != nil {
+			return &ValidationError{Name: "application_status", err: fmt.Errorf(`ent: validator failed for field "CreditGrantApplication.application_status": %w`, err)}
+		}
+	}
 	if _, ok := cgac.mutation.Credits(); !ok {
 		return &ValidationError{Name: "credits", err: errors.New(`ent: missing required field "CreditGrantApplication.credits"`)}
 	}

@@ -1,0 +1,716 @@
+# FlexPrice Helm Chart Values
+# =============================================================================
+# This chart supports two modes for each dependency:
+# 1. Operator Mode: Uses Kubernetes operators (Clickhouse, Redpanda, Stackgres)
+# 2. External Mode: Uses external connection strings provided by the user
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Global Configuration
+# -----------------------------------------------------------------------------
+global:
+  # Image pull secrets for private registries
+  imagePullSecrets: []
+  # Storage class for persistent volumes (leave empty for default)
+  storageClass: ""
+
+# -----------------------------------------------------------------------------
+# FlexPrice Application Configuration
+# -----------------------------------------------------------------------------
+flexprice:
+  image:
+    repository: ghcr.io/alfkonee/flexprice
+    tag: "latest"
+    pullPolicy: IfNotPresent
+
+  # Deployment mode: "production", "docker", or "local"
+  deploymentMode: "production"
+
+  # Number of replicas for each component
+  api:
+    enabled: true
+    replicas: 2
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "100m"
+      limits:
+        memory: "1Gi"
+        cpu: "1000m"
+    nodeSelector: {}
+    tolerations: []
+    affinity: {}
+    podAnnotations: {}
+    podSecurityContext: {}
+    securityContext: {}
+
+  consumer:
+    enabled: true
+    replicas: 2
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "100m"
+      limits:
+        memory: "1Gi"
+        cpu: "1000m"
+    nodeSelector: {}
+    tolerations: []
+    affinity: {}
+    podAnnotations: {}
+
+  worker:
+    enabled: true
+    replicas: 2
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "100m"
+      limits:
+        memory: "1Gi"
+        cpu: "1000m"
+    nodeSelector: {}
+    tolerations: []
+    affinity: {}
+    podAnnotations: {}
+
+  # Service configuration
+  service:
+    type: ClusterIP
+    port: 8080
+    annotations: {}
+
+  # Ingress configuration
+  ingress:
+    enabled: false
+    className: ""
+    annotations: {}
+      # kubernetes.io/ingress.class: nginx
+      # kubernetes.io/tls-acme: "true"
+      # cert-manager.io/cluster-issuer: letsencrypt-prod
+    hosts:
+      - host: flexprice.local
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: []
+    #  - secretName: flexprice-tls
+    #    hosts:
+    #      - flexprice.local
+
+  # Pod Disruption Budget
+  podDisruptionBudget:
+    enabled: false
+    minAvailable: 1
+    # maxUnavailable: 1
+
+  # Autoscaling configuration
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 80
+    targetMemoryUtilizationPercentage: 80
+
+  # ServiceAccount
+  serviceAccount:
+    create: true
+    annotations: {}
+    name: ""
+
+# -----------------------------------------------------------------------------
+# Authentication Configuration
+# -----------------------------------------------------------------------------
+auth:
+  provider: "flexprice"  # "flexprice" or "supabase"
+  # JWT secret (will be auto-generated if not provided)
+  secret: ""
+  # Supabase configuration (when provider is "supabase")
+  supabase:
+    baseUrl: ""
+    serviceKey: ""
+  # API Key configuration
+  apiKey:
+    header: "x-api-key"
+    # Pre-configured API keys (optional)
+    keys: {}
+      # "your-hashed-key":
+      #   tenantId: "00000000-0000-0000-0000-000000000000"
+      #   userId: "00000000-0000-0000-0000-000000000000"
+      #   name: "Production API Key"
+      #   isActive: true
+
+# -----------------------------------------------------------------------------
+# Secrets Configuration
+# -----------------------------------------------------------------------------
+secrets:
+  # Encryption key for sensitive data (will be auto-generated if not provided)
+  encryptionKey: ""
+  # Use existing secret instead of creating one
+  existingSecret: ""
+  # Key in existing secret containing auth secret
+  authSecretKey: "auth-secret"
+  # Key in existing secret containing encryption key
+  encryptionKeySecretKey: "encryption-key"
+
+# -----------------------------------------------------------------------------
+# PostgreSQL Configuration (Stackgres Operator)
+# -----------------------------------------------------------------------------
+postgres:
+  # Use external PostgreSQL instead of Stackgres operator
+  external:
+    enabled: false
+    host: ""
+    port: 5432
+    user: ""
+    password: ""
+    database: "flexprice"
+    sslMode: "require"
+    # Reader endpoint for read replicas (optional)
+    readerHost: ""
+    readerPort: 5432
+    # Use existing secret for credentials
+    existingSecret: ""
+    userKey: "username"
+    passwordKey: "password"
+
+  # Stackgres Operator configuration
+  operator:
+    # Install the Stackgres operator chart as a dependency
+    # Set to false if the operator is already installed in your cluster
+    install: false
+    # Enable creating Stackgres CRDs (SGCluster, etc.)
+    enabled: true
+    # Stackgres cluster name
+    name: "flexprice-postgres"
+    # PostgreSQL version
+    version: "17"
+    # Number of instances
+    instances: 2
+    # Storage configuration
+    storage:
+      size: "50Gi"
+      storageClass: ""
+    # Resource configuration
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "250m"
+      limits:
+        memory: "2Gi"
+        cpu: "2000m"
+    # Connection pooling (PgBouncer)
+    connectionPooling:
+      enabled: true
+      maxConnections: 200
+    # Backup configuration
+    backup:
+      enabled: false
+      retention: 7
+      schedule: "0 3 * * *"
+      storage:
+        type: "s3"  # s3 or gcs
+        bucket: ""
+        path: "postgres-backups"
+        region: ""
+        secretName: ""
+    # PostgreSQL configuration parameters
+    postgresConfig:
+      max_connections: "200"
+      shared_buffers: "256MB"
+      work_mem: "64MB"
+
+  # Database credentials (used when operator is enabled)
+  user: "flexprice"
+  password: ""  # Will be auto-generated if not provided
+  database: "flexprice"
+
+  # Connection pool settings
+  maxOpenConns: 10
+  maxIdleConns: 5
+  connMaxLifetimeMinutes: 60
+
+# -----------------------------------------------------------------------------
+# ClickHouse Configuration (Altinity Operator)
+# -----------------------------------------------------------------------------
+clickhouse:
+  # Use external ClickHouse instead of operator
+  external:
+    enabled: false
+    address: ""  # host:port (e.g., "clickhouse.example.com:9000")
+    tls: false
+    user: ""
+    password: ""
+    database: "flexprice"
+    # Use existing secret for credentials
+    existingSecret: ""
+    userKey: "username"
+    passwordKey: "password"
+
+  # Altinity ClickHouse Operator configuration
+  operator:
+    # Install the Altinity ClickHouse operator chart as a dependency
+    # Set to false if the operator is already installed in your cluster
+    install: false
+    # Enable creating ClickHouse CRDs (ClickHouseInstallation, etc.)
+    enabled: true
+    # ClickHouse cluster name
+    name: "flexprice-clickhouse"
+    # ClickHouse version
+    version: "24.9"
+    # Cluster configuration
+    cluster:
+      shardsCount: 1
+      replicasCount: 2
+    # Storage configuration
+    storage:
+      size: "100Gi"
+      storageClass: ""
+    # Resource configuration
+    resources:
+      requests:
+        memory: "1Gi"
+        cpu: "500m"
+      limits:
+        memory: "4Gi"
+        cpu: "4000m"
+    # ClickHouse settings
+    settings:
+      max_memory_usage: "3000000000"
+      max_concurrent_queries: "100"
+    # Zookeeper configuration (for replication)
+    zookeeper:
+      enabled: true
+      replicas: 3
+      storage:
+        size: "10Gi"
+
+  # Database credentials (used when operator is enabled)
+  user: "flexprice"
+  password: ""  # Will be auto-generated if not provided
+  database: "flexprice"
+
+# -----------------------------------------------------------------------------
+# Kafka/Redpanda Configuration (Redpanda Operator)
+# -----------------------------------------------------------------------------
+kafka:
+  # Use external Kafka instead of Redpanda operator
+  external:
+    enabled: false
+    brokers: []  # List of broker addresses, e.g., ["kafka1:9092", "kafka2:9092"]
+    tls: false
+    sasl:
+      enabled: false
+      mechanism: ""  # PLAIN, SCRAM-SHA-256, SCRAM-SHA-512
+      user: ""
+      password: ""
+      # Use existing secret for SASL credentials
+      existingSecret: ""
+      userKey: "username"
+      passwordKey: "password"
+
+  # Redpanda Operator configuration
+  operator:
+    # Install the Redpanda operator chart as a dependency
+    # Set to false if the operator is already installed in your cluster
+    install: false
+    # Enable creating Redpanda CRDs (Redpanda cluster, etc.)
+    enabled: true
+    # Redpanda cluster name
+    name: "flexprice-redpanda"
+    # Redpanda version
+    version: "v24.2.7"
+    # Number of brokers
+    replicas: 3
+    # Storage configuration
+    storage:
+      size: "100Gi"
+      storageClass: ""
+    # Resource configuration
+    resources:
+      cpu: "1"
+      memory: "2Gi"
+    # Redpanda configuration
+    config:
+      autoCreateTopicsEnabled: false
+      groupInitialRebalanceDelayMs: 0
+    # Enable Schema Registry
+    schemaRegistry:
+      enabled: false
+    # Enable Redpanda Console
+    console:
+      enabled: false
+
+  # Kafka consumer/producer configuration
+  consumerGroup: "flexprice-consumer"
+  clientId: "flexprice-client"
+  # Topics to create
+  topics:
+    - name: "events"
+      partitions: 12
+      replicationFactor: 3
+    - name: "events_lazy"
+      partitions: 6
+      replicationFactor: 3
+    - name: "events_post_processing"
+      partitions: 6
+      replicationFactor: 3
+    - name: "system_events"
+      partitions: 3
+      replicationFactor: 3
+    - name: "wallet_alert"
+      partitions: 3
+      replicationFactor: 3
+    - name: "event_processing_backfill"
+      partitions: 3
+      replicationFactor: 3
+    - name: "events_post_processing_backfill"
+      partitions: 3
+      replicationFactor: 3
+
+# -----------------------------------------------------------------------------
+# Temporal Configuration
+# -----------------------------------------------------------------------------
+temporal:
+  # Use external Temporal instead of deploying
+  external:
+    enabled: false
+    address: ""  # host:port (e.g., "temporal.example.com:7233")
+    namespace: "default"
+    tls: false
+    apiKey: ""
+    apiKeyName: ""
+    # Use existing secret for API key
+    existingSecret: ""
+    apiKeySecretKey: "api-key"
+
+  # Deploy Temporal using operator/chart
+  operator:
+    # Install the Temporal chart as a dependency
+    # Set to false if Temporal is already deployed in your cluster
+    install: false
+    # Enable Temporal integration (use the deployed Temporal)
+    enabled: true
+    # Uses the temporal subchart when install: true
+    # Temporal will use the same PostgreSQL as FlexPrice
+    # See https://github.com/temporalio/helm-charts for configuration options
+
+  # Temporal worker configuration
+  namespace: "default"
+  taskQueue: "billing-task-queue"
+  clientName: "flexprice-client"
+  retry:
+    initialIntervalSeconds: 1
+    maxIntervalSeconds: 10
+    maxAttempts: 3
+    backoffCoefficient: 2.0
+  connection:
+    dialTimeoutSeconds: 5
+    retryMaxAttempts: 5
+    retryInitialIntervalSeconds: 1
+    retryMaxIntervalSeconds: 10
+    retryBackoffCoefficient: 1.5
+
+  # ---------------------------------------------------------------------------
+  # Temporal Subchart Configuration (only used when operator.install is true)
+  # See: https://github.com/temporalio/helm-charts
+  # 
+  # IMPORTANT: When installing Temporal, you must configure database credentials.
+  # The defaults below use PostgreSQL but require you to set:
+  # - temporal.server.config.persistence.default.sql.host
+  # - temporal.server.config.persistence.default.sql.password
+  # - temporal.server.config.persistence.visibility.sql.host  
+  # - temporal.server.config.persistence.visibility.sql.password
+  # Or use an existingSecret.
+  # ---------------------------------------------------------------------------
+  
+  # Server configuration (subchart)
+  server:
+    replicaCount: 1
+    config:
+      persistence:
+        default:
+          driver: "sql"
+          sql:
+            driver: "postgres12"
+            host: ""           # Required: e.g., "postgres.default.svc.cluster.local"
+            port: 5432
+            database: temporal
+            user: "temporal"
+            password: ""       # Required: set this or use existingSecret
+            existingSecret: "" # Alternative: name of secret with 'password' key
+        visibility:
+          driver: "sql"
+          sql:
+            driver: "postgres12"
+            host: ""           # Required: e.g., "postgres.default.svc.cluster.local"
+            port: 5432
+            database: temporal_visibility
+            user: "temporal"
+            password: ""       # Required: set this or use existingSecret
+            existingSecret: "" # Alternative: name of secret with 'password' key
+  
+  # Web UI (subchart)
+  web:
+    enabled: true
+    replicaCount: 1
+  
+  # Admin tools (subchart)
+  admintools:
+    enabled: true
+  
+  # Cassandra (disabled - using PostgreSQL)
+  cassandra:
+    enabled: false
+  
+  # MySQL (disabled - using PostgreSQL)
+  mysql:
+    enabled: false
+  
+  # PostgreSQL (disabled - using external/shared PostgreSQL)
+  postgresql:
+    enabled: false
+  
+  # Elasticsearch (disabled)
+  elasticsearch:
+    enabled: false
+  
+  # Prometheus (optional)
+  prometheus:
+    enabled: false
+  
+  # Grafana (optional)
+  grafana:
+    enabled: false
+
+# -----------------------------------------------------------------------------
+# Observability Configuration
+# -----------------------------------------------------------------------------
+observability:
+  # Sentry configuration
+  sentry:
+    enabled: false
+    dsn: ""
+    environment: "production"
+    sampleRate: 1.0
+
+  # Pyroscope configuration
+  pyroscope:
+    enabled: false
+    serverAddress: ""
+    applicationName: "flexprice"
+    basicAuthUser: ""
+    basicAuthPassword: ""
+    sampleRate: 100
+
+  # Logging configuration
+  logging:
+    level: "info"  # debug, info, warn, error
+
+# -----------------------------------------------------------------------------
+# Email Configuration
+# -----------------------------------------------------------------------------
+email:
+  enabled: false
+  resendApiKey: ""
+  fromAddress: ""
+  replyTo: ""
+  calendarUrl: ""
+  # Use existing secret for API key
+  existingSecret: ""
+  apiKeySecretKey: "resend-api-key"
+
+# -----------------------------------------------------------------------------
+# S3 Configuration
+# -----------------------------------------------------------------------------
+s3:
+  enabled: false
+  region: "us-east-1"
+  invoice:
+    bucket: "flexprice-invoices"
+    presignExpiryDuration: "1h"
+    keyPrefix: ""
+  # AWS credentials (optional - use IRSA or instance profiles in production)
+  credentials:
+    accessKeyId: ""
+    secretAccessKey: ""
+    existingSecret: ""
+    accessKeyIdKey: "aws-access-key-id"
+    secretAccessKeyKey: "aws-secret-access-key"
+
+# -----------------------------------------------------------------------------
+# Cache Configuration
+# -----------------------------------------------------------------------------
+cache:
+  enabled: false
+  # Redis configuration (if needed in future)
+  # redis:
+  #   host: ""
+  #   port: 6379
+
+# -----------------------------------------------------------------------------
+# Webhook Configuration
+# -----------------------------------------------------------------------------
+webhook:
+  enabled: true
+  topic: "system_events"
+  pubsub: "kafka"  # "kafka" or "memory"
+  consumerGroup: "webhook-consumer"
+  maxRetries: 3
+  initialInterval: "1s"
+  maxInterval: "10s"
+  multiplier: 2.0
+  maxElapsedTime: "2m"
+  # Svix configuration
+  svix:
+    enabled: false
+    authToken: ""
+    baseUrl: "https://api.us.svix.com"
+    existingSecret: ""
+    authTokenKey: "svix-auth-token"
+
+# -----------------------------------------------------------------------------
+# Feature Flags
+# -----------------------------------------------------------------------------
+featureFlags:
+  enableFeatureUsageForAnalytics: true
+  forceV1ForTenant: ""
+
+# -----------------------------------------------------------------------------
+# RBAC Configuration
+# -----------------------------------------------------------------------------
+rbac:
+  rolesConfigPath: "/app/config/rbac/roles.json"
+
+# -----------------------------------------------------------------------------
+# OAuth Configuration
+# -----------------------------------------------------------------------------
+oauth:
+  redirectUri: ""
+
+# -----------------------------------------------------------------------------
+# Migration Configuration
+# -----------------------------------------------------------------------------
+migrations:
+  # Run migrations on install/upgrade
+  enabled: true
+  # Use init containers or separate job
+  runAsJob: true
+  # Clickhouse migrations
+  clickhouse:
+    enabled: true
+  # PostgreSQL migrations
+  postgres:
+    enabled: true
+  # Kafka topic creation
+  kafka:
+    enabled: true
+  # Temporal database initialization
+  temporal:
+    enabled: true
+
+# -----------------------------------------------------------------------------
+# Network Policies
+# -----------------------------------------------------------------------------
+networkPolicy:
+  enabled: false
+  # Allow ingress from these namespaces
+  ingressNamespaces: []
+  # Additional ingress rules
+  additionalIngress: []
+  # Additional egress rules
+  additionalEgress: []
+
+# -----------------------------------------------------------------------------
+# Pod Security Standards
+# -----------------------------------------------------------------------------
+podSecurityStandards:
+  # Enforce restricted PSS
+  restricted: false
+
+# =============================================================================
+# OPERATOR SUBCHART CONFIGURATIONS
+# =============================================================================
+# These sections configure the operator subcharts when their respective
+# `*.operator.install` options are set to true.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Stackgres Operator Subchart Configuration
+# Only used when postgres.operator.install is true
+# See: https://stackgres.io/doc/latest/install/helm/
+# -----------------------------------------------------------------------------
+stackgres:
+  # Operator namespace (defaults to release namespace)
+  # operatorNamespace: stackgres
+  
+  # Create CRDs
+  crd:
+    create: true
+  
+  # Operator configuration
+  operator:
+    image:
+      tag: "1.12.0"
+  
+  # Web UI
+  restapi:
+    enabled: true
+  
+  # Admin UI
+  adminui:
+    enabled: false
+  
+  # Prometheus integration
+  prometheus:
+    allowAutobind: true
+  
+  # Grafana integration
+  grafana:
+    autoEmbed: false
+
+# -----------------------------------------------------------------------------
+# Altinity ClickHouse Operator Subchart Configuration
+# Only used when clickhouse.operator.install is true
+# See: https://github.com/Altinity/clickhouse-operator
+# -----------------------------------------------------------------------------
+clickhouse-operator:
+  # Operator configuration
+  operator:
+    image:
+      repository: altinity/clickhouse-operator
+      tag: "0.24.0"
+  
+  # Metrics exporter
+  metrics:
+    enabled: true
+    image:
+      repository: altinity/metrics-exporter
+      tag: "0.24.0"
+  
+  # Watch namespaces (empty = all namespaces)
+  watchNamespaces: []
+
+# -----------------------------------------------------------------------------
+# Redpanda Operator Subchart Configuration
+# Only used when kafka.operator.install is true
+# See: https://docs.redpanda.com/current/deploy/deployment-option/self-hosted/kubernetes/
+# -----------------------------------------------------------------------------
+redpanda-operator:
+  # Operator configuration
+  image:
+    repository: docker.redpanda.com/redpandadata/redpanda-operator
+    tag: "v2.2.2-24.2.7"
+  
+  # Resource limits
+  resources:
+    limits:
+      cpu: 100m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  
+  # Webhook configuration (disabled by default for Namespace scope)
+  webhook:
+    enabled: false
