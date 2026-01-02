@@ -1,0 +1,58 @@
+apiVersion: v2
+name: flexprice
+description: A Helm chart for deploying FlexPrice backend with its dependencies
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - billing
+  - pricing
+  - metering
+  - usage-based-billing
+  - subscription
+home: https://github.com/flexprice/flexprice
+sources:
+  - https://github.com/flexprice/flexprice
+maintainers:
+  - name: FlexPrice Team
+    url: https://github.com/flexprice
+dependencies:
+  # ==========================================================================
+  # Stackgres Operator - PostgreSQL with HA, connection pooling, and backups
+  # https://stackgres.io/
+  # ==========================================================================
+  - name: stackgres-operator
+    version: "1.18.3"
+    repository: https://stackgres.io/downloads/stackgres-k8s/stackgres/helm/
+    condition: postgres.operator.install
+    alias: stackgres
+
+  # ==========================================================================
+  # Altinity ClickHouse Operator - Analytics database with sharding/replication
+  # https://github.com/Altinity/clickhouse-operator
+  # ==========================================================================
+  - name: altinity-clickhouse-operator
+    version: "0.25.6"
+    repository: https://docs.altinity.com/clickhouse-operator/
+    condition: clickhouse.operator.install
+    alias: clickhouse-operator
+
+  # ==========================================================================
+  # Redpanda Operator - Kafka-compatible streaming platform
+  # https://docs.redpanda.com/current/deploy/deployment-option/self-hosted/kubernetes/
+  # ==========================================================================
+  - name: operator
+    version: "25.3.1"
+    repository: https://charts.redpanda.com
+    condition: kafka.operator.install
+    alias: redpanda-operator
+
+  # ==========================================================================
+  # Temporal - Workflow orchestration platform
+  # https://github.com/temporalio/helm-charts
+  # ==========================================================================
+  - name: temporal
+    version: "0.44.0"
+    repository: https://go.temporal.io/helm-charts
+    condition: temporal.operator.install
+    alias: temporal

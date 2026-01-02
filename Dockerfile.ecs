@@ -7,7 +7,7 @@ ARG TARGETPLATFORM=linux/arm64
 #####################################
 # 1) Builder stage
 #####################################
-FROM --platform=${TARGETPLATFORM} golang:1.23.3-alpine3.20 AS builder
+FROM --platform=${TARGETPLATFORM} golang:1.23.3-alpine AS builder
 WORKDIR /app
 
 # cache Go module downloads
@@ -48,6 +48,7 @@ COPY --from=typst /bin/typst /usr/local/bin/
 COPY internal/config ./config
 COPY assets/fonts ./assets/fonts
 COPY assets/typst-templates ./assets/typst-templates
+COPY assets/email-templates ./assets/email-templates
 
 RUN chmod +x /app/server
 

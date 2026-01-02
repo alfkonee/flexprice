@@ -1,0 +1,430 @@
+---
+# Helm Chart Validation Test Configuration
+# This file defines all test scenarios and validation rules for the FlexPrice Helm chart
+#
+# Usage: helm template <values> | validate against rules in this file
+
+version: "1.0"
+
+# Test metadata
+metadata:
+  chart: flexprice
+  description: FlexPrice Helm Chart validation suite
+  date: 2024-01-01
+
+# Use cases - each defining a complete deployment scenario
+use_cases:
+
+  use_case_1_pre_installed_operators:
+    name: "Pre-Installed Operators"
+    description: "Operators already deployed in the cluster"
+    when_to_use:
+      - "Multi-tenant clusters with shared operators"
+      - "Existing infrastructure with pre-installed operators"
+      - "Team-managed operator installations"
+    
+    values:
+      postgres:
+        operator:
+          install: false
+          enabled: true
+      clickhouse:
+        operator:
+          install: false
+          enabled: true
+      kafka:
+        operator:
+          install: false
+          enabled: true
+      temporal:
+        operator:
+          install: false
+          enabled: true
+    
+    commands:
+      template: |
+        helm template flexprice . \
+          --set postgres.operator.install=false \
+          --set clickhouse.operator.install=false \
+          --set kafka.operator.install=false \
+          --set temporal.operator.install=false
+      dry_run: |
+        helm install --dry-run --debug flexprice . \
+          --set postgres.operator.install=false \
+          --set clickhouse.operator.install=false \
+          --set kafka.operator.install=false \
+          --set temporal.operator.install=false
+      install: |
+        helm install flexprice . \
+          --namespace flexprice \
+          --create-namespace
+    
+    validation:
+      min_lines: 1200
+      must_contain:
+        - "apiVersion: v1"
+        - "kind: Deployment"
+        - "kind: Service"
+      must_not_contain:
+        - "kind: SGCluster"
+        - "kind: ClickHouseInstallation"
+        - "kind: Redpanda"
+        - "kind: Temporal"
+    
+    expected_resources:
+      - ServiceAccount
+      - Secret
+      - ConfigMap
+      - Deployment (api, consumer, worker)
+      - Service
+      - HPA
+      - PDB
+      - NetworkPolicy
+
+  use_case_2_external_services:
+    name: "External Services"
+    description: "All dependencies running externally (managed services, SaaS)"
+    when_to_use:
+      - "Cloud-managed databases (RDS, Cloud SQL)"
+      - "SaaS offerings (Temporal Cloud)"
+      - "Multi-cluster deployments"
+      - "Development with local/Docker services"
+    
+    values_file: examples/values-external.yaml
+    
+    commands:
+      template: |
+        helm template flexprice . -f examples/values-external.yaml
+      dry_run: |
+        helm install --dry-run --debug flexprice . -f examples/values-external.yaml
+      install: |
+        helm install flexprice . \
+          -f examples/values-external.yaml \
+          --namespace flexprice \
+          --create-namespace
+    
+    validation:
+      min_lines: 1200
+      must_contain:
+        - "kind: Deployment"
+        - "apiVersion: v1"
+        - "name: flexprice-api"
+      must_not_contain:
+        - "kind: SGCluster"
+        - "kind: ClickHouseInstallation"
+        - "kind: Redpanda"
+    
+    prerequisites:
+      - "kubectl create secret generic postgres-credentials"
+      - "kubectl create secret generic clickhouse-credentials"
+      - "kubectl create secret generic kafka-credentials"
+      - "kubectl create secret generic temporal-credentials"
+    
+    expected_resources:
+      - Deployment (api, consumer, worker)
+      - Service
+      - HPA
+      - ConfigMap
+      - Secret
+
+  use_case_3_operator_deployment:
+    name: "Operator Deployment"
+    description: "All operators deployed as chart dependencies"
+    when_to_use:
+      - "Standalone clusters"
+      - "Simplified operations with single Helm chart"
+      - "Complete infrastructure-as-code"
+      - "Single-tenant deployments"
+    
+    values_file: examples/values-operators.yaml
+    
+    commands:
+      template: |
+        helm template flexprice . -f examples/values-operators.yaml
+      dry_run: |
+        helm install --dry-run --debug flexprice . -f examples/values-operators.yaml
+      install: |
+        helm install flexprice . \
+          -f examples/values-operators.yaml \
+          --namespace flexprice \
+          --create-namespace
+    
+    validation:
+      min_lines: 10000
+      must_contain:
+        - "kind: SGCluster"
+        - "kind: ClickHouseInstallation"
+        - "kind: Redpanda"
+        - "kind: Deployment"
+      
+      resource_counts:
+        Deployment:
+          min: 10  # API, Consumer, Worker, Temporal, Operators
+        Secret:
+          min: 3   # Credentials + migrations
+        ConfigMap:
+          min: 2   # Config + RBAC
+    
+    expected_resources:
+      - SGCluster (PostgreSQL)
+      - ClickHouseInstallation
+      - Redpanda (Kafka)
+      - Temporal Deployment
+      - FlexPrice Deployments (api, consumer, worker)
+      - Services
+      - Secrets
+      - ConfigMaps
+      - HPA
+      - NetworkPolicy
+
+  use_case_4_minimal_development:
+    name: "Minimal Development"
+    description: "Lightweight development setup with minimal resources"
+    when_to_use:
+      - "Local development"
+      - "CI/CD test environments"
+      - "Developer laptops (Minikube/Docker Desktop)"
+      - "Cost-conscious testing"
+      - "Rapid prototyping"
+    
+    values_file: examples/values-minimal.yaml
+    
+    commands:
+      template: |
+        helm template flexprice . -f examples/values-minimal.yaml
+      dry_run: |
+        helm install --dry-run --debug flexprice . -f examples/values-minimal.yaml
+      install: |
+        # Start Temporal locally first
+        docker run -d --name temporal -p 7233:7233 temporalio/auto-setup:latest
+        
+        # Then deploy FlexPrice
+        helm install flexprice . \
+          -f examples/values-minimal.yaml \
+          --namespace flexprice \
+          --create-namespace
+    
+    validation:
+      min_lines: 1200
+      must_contain:
+        - "kind: Deployment"
+        - "memory: \"128Mi\""  # Minimal resources
+      must_not_contain:
+        - "kind: ClickHouseInstallation"  # Only operators included
+    
+    expected_resources:
+      - SGCluster (minimal 1 instance)
+      - ClickHouseInstallation (minimal)
+      - Redpanda (minimal 1 replica)
+      - FlexPrice Deployments (1 replica each)
+
+  use_case_5_mixed_configuration:
+    name: "Mixed Configuration"
+    description: "Selectively use operators for some services, external for others"
+    variations:
+      - name: "PostgreSQL External + Others Operator"
+        commands:
+          template: |
+            helm template flexprice . \
+              --set postgres.external.enabled=true \
+              --set postgres.external.host="pg.example.com" \
+              --set postgres.external.user="user" \
+              --set postgres.external.password="pass" \
+              --set postgres.operator.install=false \
+              --set clickhouse.operator.install=true \
+              --set kafka.operator.install=true \
+              --set temporal.external.enabled=true \
+              --set temporal.external.address="temporal.example.com:7233"
+        
+        validation:
+          must_contain:
+            - "kind: ClickHouseInstallation"
+            - "kind: Redpanda"
+          must_not_contain:
+            - "kind: SGCluster"  # PostgreSQL is external
+      
+      - name: "Kafka External + Others Operator"
+        commands:
+          template: |
+            helm template flexprice . \
+              --set kafka.external.enabled=true \
+              --set kafka.external.brokers="{broker1:9092,broker2:9092}" \
+              --set kafka.operator.install=false \
+              --set postgres.operator.install=true \
+              --set clickhouse.operator.install=true \
+              --set temporal.operator.install=true
+        
+        validation:
+          must_contain:
+            - "kind: SGCluster"
+            - "kind: ClickHouseInstallation"
+          must_not_contain:
+            - "kind: Redpanda"  # Kafka is external
+
+# Global validation rules
+validation_rules:
+  
+  always_present:
+    - "apiVersion: v1 or apiVersion: apps/v1"
+    - "kind: ServiceAccount for flexprice"
+    - "kind: Deployment for flexprice-api"
+    - "kind: Deployment for flexprice-consumer"
+    - "kind: Deployment for flexprice-worker"
+    - "kind: Service for flexprice"
+    - "kind: ConfigMap for configuration"
+    - "kind: Secret for credentials"
+  
+  security:
+    - "RBAC Roles defined"
+    - "NetworkPolicy configured"
+    - "Security context set for containers"
+    - "Resource requests/limits specified"
+  
+  reliability:
+    - "HPA configured for scalability"
+    - "PDB (Pod Disruption Budget) configured"
+    - "Service health checks present"
+    - "ConfigMap RBAC separation"
+
+# Test matrix - all combinations to validate
+test_matrix:
+  
+  scenarios:
+    - name: "Default + All Operators Pre-Installed"
+      operators:
+        postgres: false
+        clickhouse: false
+        kafka: false
+        temporal: false
+      external: {}
+      expected_outcome: "~1429 lines"
+    
+    - name: "All External Services"
+      operators:
+        postgres: false
+        clickhouse: false
+        kafka: false
+        temporal: false
+      external:
+        postgres: true
+        clickhouse: true
+        kafka: true
+        temporal: true
+      expected_outcome: "~1345 lines"
+    
+    - name: "All Operators Deployed"
+      operators:
+        postgres: true
+        clickhouse: true
+        kafka: true
+        temporal: true
+      external: {}
+      expected_outcome: "~11903 lines"
+    
+    - name: "Minimal Development"
+      operators:
+        postgres: true
+        clickhouse: true
+        kafka: true
+        temporal: false
+      external:
+        temporal: true
+      expected_outcome: "~1380 lines"
+    
+    - name: "PostgreSQL External"
+      operators:
+        postgres: false
+        clickhouse: true
+        kafka: true
+        temporal: true
+      external:
+        postgres: true
+      expected_outcome: "~10000 lines"
+
+# Deployment commands reference
+deployment_guide:
+  
+  create_secrets: |
+    # PostgreSQL
+    kubectl create secret generic postgres-credentials \
+      --from-literal=password='your-password' \
+      -n flexprice
+    
+    # ClickHouse
+    kubectl create secret generic clickhouse-credentials \
+      --from-literal=password='your-password' \
+      -n flexprice
+    
+    # Kafka
+    kubectl create secret generic kafka-credentials \
+      --from-literal=username='user' \
+      --from-literal=password='password' \
+      -n flexprice
+    
+    # Temporal
+    kubectl create secret generic temporal-credentials \
+      --from-literal=api-key='your-api-key' \
+      -n flexprice
+  
+  install_use_case_1: |
+    helm install flexprice ./helm/flexprice \
+      --namespace flexprice \
+      --create-namespace
+  
+  install_use_case_2: |
+    helm install flexprice ./helm/flexprice \
+      -f examples/values-external.yaml \
+      --namespace flexprice \
+      --create-namespace
+  
+  install_use_case_3: |
+    helm install flexprice ./helm/flexprice \
+      -f examples/values-operators.yaml \
+      --namespace flexprice \
+      --create-namespace
+  
+  install_use_case_4: |
+    # Start Temporal locally
+    docker run -d --name temporal -p 7233:7233 temporalio/auto-setup:latest
+    
+    helm install flexprice ./helm/flexprice \
+      -f examples/values-minimal.yaml \
+      --namespace flexprice \
+      --create-namespace
+  
+  install_mixed: |
+    helm install flexprice ./helm/flexprice \
+      --set postgres.external.enabled=true \
+      --set postgres.external.host="rds.example.com" \
+      --set postgres.external.user="user" \
+      --set postgres.external.password="pass" \
+      --set postgres.operator.install=false \
+      --set clickhouse.operator.install=true \
+      --set kafka.operator.install=true \
+      --set temporal.external.enabled=true \
+      --set temporal.external.address="temporal.example.com:7233" \
+      --namespace flexprice \
+      --create-namespace
+
+# Monitoring and troubleshooting
+operations:
+  
+  verify_deployment: |
+    kubectl get pods -n flexprice
+    kubectl get deployments -n flexprice
+    kubectl get services -n flexprice
+  
+  check_logs: |
+    kubectl logs -n flexprice deployment/flexprice-api -f
+    kubectl logs -n flexprice deployment/flexprice-consumer -f
+    kubectl logs -n flexprice deployment/flexprice-worker -f
+  
+  check_operators: |
+    kubectl get sgclusters -n flexprice
+    kubectl get clickhouseinstallations -n flexprice
+    kubectl get redpandaclusters -n flexprice
+  
+  describe_issues: |
+    kubectl describe pod -n flexprice <pod-name>
+    kubectl logs -n flexprice <pod-name>
+    kubectl events -n flexprice

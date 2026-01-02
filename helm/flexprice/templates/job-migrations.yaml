@@ -1,0 +1,292 @@
+{{/*
+Migration Job for initializing databases and Kafka topics
+*/}}
+{{- if and .Values.migrations.enabled .Values.migrations.runAsJob }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "flexprice.fullname" . }}-migrations
+  labels:
+    {{- include "flexprice.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "1"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  ttlSecondsAfterFinished: 600
+  backoffLimit: 5
+  template:
+    metadata:
+      labels:
+        {{- include "flexprice.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: migrations
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "flexprice.serviceAccountName" . }}
+      restartPolicy: OnFailure
+      initContainers:
+        # Wait for all dependencies to be ready
+        - name: wait-for-postgres
+          image: busybox:1.36
+          command: ['sh', '-c']
+          args:
+            - |
+              echo "Waiting for PostgreSQL at {{ include "flexprice.postgres.host" . }}:{{ include "flexprice.postgres.port" . }}..."
+              until nc -z {{ include "flexprice.postgres.host" . }} {{ include "flexprice.postgres.port" . }}; do
+                echo "PostgreSQL not ready, waiting..."
+                sleep 5
+              done
+              echo "PostgreSQL is ready!"
+        {{- if .Values.migrations.clickhouse.enabled }}
+        - name: wait-for-clickhouse
+          image: busybox:1.36
+          command: ['sh', '-c']
+          args:
+            - |
+              CH_HOST="{{ (split ":" (include "flexprice.clickhouse.address" .))._0 }}"
+              CH_PORT="{{ (split ":" (include "flexprice.clickhouse.address" .))._1 | default "9000" }}"
+              echo "Waiting for ClickHouse at ${CH_HOST}:${CH_PORT}..."
+              until nc -z ${CH_HOST} ${CH_PORT}; do
+                echo "ClickHouse not ready, waiting..."
+                sleep 5
+              done
+              echo "ClickHouse is ready!"
+        {{- end }}
+        {{- if .Values.migrations.kafka.enabled }}
+        - name: wait-for-kafka
+          image: busybox:1.36
+          command: ['sh', '-c']
+          args:
+            - |
+              KAFKA_BROKER="{{ include "flexprice.kafka.brokers" . }}"
+              KAFKA_HOST="${KAFKA_BROKER%%:*}"
+              KAFKA_PORT="${KAFKA_BROKER##*:}"
+              echo "Waiting for Kafka at ${KAFKA_HOST}:${KAFKA_PORT}..."
+              until nc -z ${KAFKA_HOST} ${KAFKA_PORT}; do
+                echo "Kafka not ready, waiting..."
+                sleep 5
+              done
+              echo "Kafka is ready!"
+        {{- end }}
+      containers:
+        {{- if .Values.migrations.postgres.enabled }}
+        - name: postgres-migrations
+          image: postgres:17-alpine
+          command: ['/bin/sh', '-c']
+          args:
+            - |
+              set -e
+              echo "Running PostgreSQL migrations..."
+              
+              # Wait for database to be fully ready
+              until PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_HOST -p $POSTGRES_PORT -U $POSTGRES_USER -d $POSTGRES_DB -c "SELECT 1" > /dev/null 2>&1; do
+                echo "Waiting for PostgreSQL to accept connections..."
+                sleep 2
+              done
+              
+              # Create Temporal database if it doesn't exist
+              echo "Creating Temporal database if not exists..."
+              PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_HOST -p $POSTGRES_PORT -U $POSTGRES_USER -d postgres -c "SELECT 1 FROM pg_database WHERE datname = 'temporal'" | grep -q 1 || \
+                PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_HOST -p $POSTGRES_PORT -U $POSTGRES_USER -d postgres -c "CREATE DATABASE temporal"
+              
+              PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_HOST -p $POSTGRES_PORT -U $POSTGRES_USER -d postgres -c "GRANT ALL PRIVILEGES ON DATABASE temporal TO $POSTGRES_USER" || true
+              
+              echo "PostgreSQL migrations completed!"
+          env:
+            - name: POSTGRES_HOST
+              value: {{ include "flexprice.postgres.host" . | quote }}
+            - name: POSTGRES_PORT
+              value: {{ include "flexprice.postgres.port" . | quote }}
+            - name: POSTGRES_USER
+              value: {{ include "flexprice.postgres.user" . | quote }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "flexprice.postgres.secretName" . }}
+                  key: {{ if .Values.postgres.external.existingSecret }}{{ .Values.postgres.external.passwordKey }}{{ else }}password{{ end }}
+            - name: POSTGRES_DB
+              value: {{ include "flexprice.postgres.database" . | quote }}
+        {{- end }}
+        {{- if .Values.migrations.clickhouse.enabled }}
+        - name: clickhouse-migrations
+          image: clickhouse/clickhouse-client:24.9-alpine
+          command: ['/bin/sh', '-c']
+          args:
+            - |
+              set -e
+              echo "Running ClickHouse migrations..."
+              
+              CH_HOST="{{ (split ":" (include "flexprice.clickhouse.address" .))._0 }}"
+              CH_PORT="{{ (split ":" (include "flexprice.clickhouse.address" .))._1 | default "9000" }}"
+              
+              # Wait for ClickHouse to be ready
+              until clickhouse-client --host=$CH_HOST --port=$CH_PORT --user=$CH_USER --password=$CH_PASSWORD --query="SELECT 1" > /dev/null 2>&1; do
+                echo "Waiting for ClickHouse to accept connections..."
+                sleep 2
+              done
+              
+              # Create database
+              echo "Creating database..."
+              clickhouse-client --host=$CH_HOST --port=$CH_PORT --user=$CH_USER --password=$CH_PASSWORD \
+                --query="CREATE DATABASE IF NOT EXISTS $CH_DATABASE"
+              
+              # Create events table
+              echo "Creating events table..."
+              clickhouse-client --host=$CH_HOST --port=$CH_PORT --user=$CH_USER --password=$CH_PASSWORD \
+                --database=$CH_DATABASE \
+                --query="
+                  CREATE TABLE IF NOT EXISTS events (
+                    id String NOT NULL,
+                    tenant_id String NOT NULL,
+                    external_customer_id String NOT NULL,
+                    environment_id String NOT NULL,
+                    event_name String NOT NULL,
+                    customer_id Nullable(String),
+                    source Nullable(String),
+                    timestamp DateTime64(3) NOT NULL DEFAULT now(),
+                    ingested_at DateTime64(3) NOT NULL DEFAULT now(),
+                    properties String,
+                    CONSTRAINT check_event_name CHECK event_name != '',
+                    CONSTRAINT check_tenant_id CHECK tenant_id != '',
+                    CONSTRAINT check_event_id CHECK id != '',
+                    CONSTRAINT check_environment_id CHECK environment_id != ''
+                  )
+                  ENGINE = ReplacingMergeTree(ingested_at)
+                  PARTITION BY toYYYYMM(timestamp)
+                  PRIMARY KEY (tenant_id, environment_id)
+                  ORDER BY (tenant_id, environment_id, timestamp, id)
+                  SETTINGS index_granularity = 8192
+                "
+              
+              # Create events_processed table
+              echo "Creating events_processed table..."
+              clickhouse-client --host=$CH_HOST --port=$CH_PORT --user=$CH_USER --password=$CH_PASSWORD \
+                --database=$CH_DATABASE \
+                --query="
+                  CREATE TABLE IF NOT EXISTS events_processed (
+                    id String NOT NULL,
+                    tenant_id String NOT NULL,
+                    environment_id String NOT NULL,
+                    event_id String NOT NULL,
+                    meter_id String NOT NULL,
+                    value Float64 NOT NULL DEFAULT 0,
+                    timestamp DateTime64(3) NOT NULL DEFAULT now(),
+                    processed_at DateTime64(3) NOT NULL DEFAULT now()
+                  )
+                  ENGINE = ReplacingMergeTree(processed_at)
+                  PARTITION BY toYYYYMM(timestamp)
+                  PRIMARY KEY (tenant_id, environment_id, meter_id)
+                  ORDER BY (tenant_id, environment_id, meter_id, timestamp, id)
+                  SETTINGS index_granularity = 8192
+                "
+              
+              # Create feature_usage table
+              echo "Creating feature_usage table..."
+              clickhouse-client --host=$CH_HOST --port=$CH_PORT --user=$CH_USER --password=$CH_PASSWORD \
+                --database=$CH_DATABASE \
+                --query="
+                  CREATE TABLE IF NOT EXISTS feature_usage (
+                    id String NOT NULL,
+                    tenant_id String NOT NULL,
+                    environment_id String NOT NULL,
+                    customer_id String NOT NULL,
+                    feature_id String NOT NULL,
+                    usage_count Int64 NOT NULL DEFAULT 0,
+                    timestamp DateTime64(3) NOT NULL DEFAULT now(),
+                    recorded_at DateTime64(3) NOT NULL DEFAULT now()
+                  )
+                  ENGINE = ReplacingMergeTree(recorded_at)
+                  PARTITION BY toYYYYMM(timestamp)
+                  PRIMARY KEY (tenant_id, environment_id, customer_id, feature_id)
+                  ORDER BY (tenant_id, environment_id, customer_id, feature_id, timestamp, id)
+                  SETTINGS index_granularity = 8192
+                "
+              
+              # Create costsheet_usage table
+              echo "Creating costsheet_usage table..."
+              clickhouse-client --host=$CH_HOST --port=$CH_PORT --user=$CH_USER --password=$CH_PASSWORD \
+                --database=$CH_DATABASE \
+                --query="
+                  CREATE TABLE IF NOT EXISTS costsheet_usage (
+                    id String NOT NULL,
+                    tenant_id String NOT NULL,
+                    environment_id String NOT NULL,
+                    customer_id String NOT NULL,
+                    costsheet_id String NOT NULL,
+                    cost Float64 NOT NULL DEFAULT 0,
+                    timestamp DateTime64(3) NOT NULL DEFAULT now(),
+                    recorded_at DateTime64(3) NOT NULL DEFAULT now()
+                  )
+                  ENGINE = ReplacingMergeTree(recorded_at)
+                  PARTITION BY toYYYYMM(timestamp)
+                  PRIMARY KEY (tenant_id, environment_id, customer_id, costsheet_id)
+                  ORDER BY (tenant_id, environment_id, customer_id, costsheet_id, timestamp, id)
+                  SETTINGS index_granularity = 8192
+                "
+              
+              echo "ClickHouse migrations completed!"
+          env:
+            - name: CH_USER
+              value: {{ include "flexprice.clickhouse.user" . | quote }}
+            - name: CH_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "flexprice.clickhouse.secretName" . }}
+                  key: {{ if .Values.clickhouse.external.existingSecret }}{{ .Values.clickhouse.external.passwordKey }}{{ else }}password{{ end }}
+            - name: CH_DATABASE
+              value: {{ include "flexprice.clickhouse.database" . | quote }}
+        {{- end }}
+        {{- if .Values.migrations.kafka.enabled }}
+        - name: kafka-topic-init
+          {{- if and .Values.kafka.operator.enabled (not .Values.kafka.external.enabled) }}
+          image: redpandadata/redpanda:{{ .Values.kafka.operator.version }}
+          command: ['/bin/sh', '-c']
+          args:
+            - |
+              set -e
+              echo "Creating Kafka topics..."
+              
+              BROKER="{{ include "flexprice.kafka.brokers" . }}"
+              
+              # Wait for broker to be ready
+              until rpk cluster info --brokers=$BROKER > /dev/null 2>&1; do
+                echo "Waiting for Redpanda to be ready..."
+                sleep 5
+              done
+              
+              {{- range .Values.kafka.topics }}
+              echo "Creating topic {{ .name }}..."
+              rpk topic create {{ .name }} --brokers=$BROKER --partitions={{ .partitions }} --replicas={{ .replicationFactor }} || true
+              {{- end }}
+              
+              echo "Topic creation completed!"
+              rpk topic list --brokers=$BROKER
+          {{- else }}
+          image: confluentinc/cp-kafka:7.7.1
+          command: ['/bin/sh', '-c']
+          args:
+            - |
+              set -e
+              echo "Creating Kafka topics..."
+              
+              BROKER="{{ include "flexprice.kafka.brokers" . }}"
+              
+              # Wait for broker to be ready
+              until kafka-topics --bootstrap-server $BROKER --list > /dev/null 2>&1; do
+                echo "Waiting for Kafka to be ready..."
+                sleep 5
+              done
+              
+              {{- range .Values.kafka.topics }}
+              echo "Creating topic {{ .name }}..."
+              kafka-topics --bootstrap-server $BROKER --create --if-not-exists --topic {{ .name }} --partitions {{ .partitions }} --replication-factor {{ .replicationFactor }} || true
+              {{- end }}
+              
+              echo "Topic creation completed!"
+              kafka-topics --bootstrap-server $BROKER --list
+          {{- end }}
+        {{- end }}
+{{- end }}

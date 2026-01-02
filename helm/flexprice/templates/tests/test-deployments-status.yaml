@@ -1,0 +1,57 @@
+---
+# Helm Test: Verify Deployments Status
+# This test checks that all FlexPrice deployments are ready
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "flexprice.fullname" . }}-test-deployments
+  labels:
+    {{- include "flexprice.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": before-this,failed
+spec:
+  serviceAccountName: {{ include "flexprice.serviceAccountName" . }}
+  containers:
+    - name: test-deployments-status
+      image: bitnami/kubectl:latest
+      imagePullPolicy: IfNotPresent
+      command:
+        - sh
+        - -c
+        - |
+          echo "Testing Deployment status..."
+          
+          NAMESPACE=$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace)
+          
+          # Check API deployment
+          echo "Checking API deployment..."
+          kubectl rollout status deployment/{{ include "flexprice.fullname" . }}-api -n "$NAMESPACE" --timeout=5m
+          if [ $? -ne 0 ]; then
+            echo "✗ API deployment is not ready"
+            exit 1
+          fi
+          echo "✓ API deployment is ready"
+          
+          # Check Consumer deployment
+          echo "Checking Consumer deployment..."
+          kubectl rollout status deployment/{{ include "flexprice.fullname" . }}-consumer -n "$NAMESPACE" --timeout=5m
+          if [ $? -ne 0 ]; then
+            echo "✗ Consumer deployment is not ready"
+            exit 1
+          fi
+          echo "✓ Consumer deployment is ready"
+          
+          # Check Worker deployment
+          echo "Checking Worker deployment..."
+          kubectl rollout status deployment/{{ include "flexprice.fullname" . }}-worker -n "$NAMESPACE" --timeout=5m
+          if [ $? -ne 0 ]; then
+            echo "✗ Worker deployment is not ready"
+            exit 1
+          fi
+          echo "✓ Worker deployment is ready"
+          
+          echo ""
+          echo "✓ All deployments are ready"
+          exit 0
+  restartPolicy: Never

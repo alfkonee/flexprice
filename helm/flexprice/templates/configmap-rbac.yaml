@@ -1,0 +1,52 @@
+{{/* Read RBAC roles from internal config */}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "flexprice.fullname" . }}-rbac
+  labels:
+    {{- include "flexprice.labels" . | nindent 4 }}
+data:
+  roles.json: |
+    {
+      "roles": [
+        {
+          "name": "admin",
+          "description": "Full access to all resources",
+          "permissions": ["*"]
+        },
+        {
+          "name": "developer",
+          "description": "Read and write access to most resources",
+          "permissions": [
+            "events:*",
+            "customers:*",
+            "subscriptions:*",
+            "invoices:read",
+            "plans:read",
+            "meters:*"
+          ]
+        },
+        {
+          "name": "viewer",
+          "description": "Read-only access to all resources",
+          "permissions": [
+            "events:read",
+            "customers:read",
+            "subscriptions:read",
+            "invoices:read",
+            "plans:read",
+            "meters:read"
+          ]
+        },
+        {
+          "name": "billing",
+          "description": "Billing and invoice management",
+          "permissions": [
+            "invoices:*",
+            "customers:read",
+            "subscriptions:read",
+            "plans:read"
+          ]
+        }
+      ]
+    }

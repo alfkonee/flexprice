@@ -1,0 +1,105 @@
+{{/*
+Altinity ClickHouse Operator Cluster
+Only created when clickhouse.operator.enabled is true and clickhouse.external.enabled is false
+*/}}
+{{- if and .Values.clickhouse.operator.enabled (not .Values.clickhouse.external.enabled) }}
+---
+apiVersion: "clickhouse.altinity.com/v1"
+kind: "ClickHouseInstallation"
+metadata:
+  name: {{ .Values.clickhouse.operator.name }}
+  labels:
+    {{- include "flexprice.labels" . | nindent 4 }}
+spec:
+  defaults:
+    templates:
+      dataVolumeClaimTemplate: data-volume-template
+      logVolumeClaimTemplate: log-volume-template
+  configuration:
+    users:
+      {{ .Values.clickhouse.user }}/password_sha256_hex: {{ .Values.clickhouse.password | default (include "flexprice.randomPassword" .) | sha256sum }}
+      {{ .Values.clickhouse.user }}/networks/ip: "::/0"
+      {{ .Values.clickhouse.user }}/profile: default
+      {{ .Values.clickhouse.user }}/quota: default
+    profiles:
+      default/max_memory_usage: {{ .Values.clickhouse.operator.settings.max_memory_usage | quote }}
+      default/max_concurrent_queries: {{ .Values.clickhouse.operator.settings.max_concurrent_queries | quote }}
+    settings:
+      max_concurrent_queries: {{ .Values.clickhouse.operator.settings.max_concurrent_queries }}
+    clusters:
+      - name: {{ .Values.clickhouse.operator.name }}
+        layout:
+          shardsCount: {{ .Values.clickhouse.operator.cluster.shardsCount }}
+          replicasCount: {{ .Values.clickhouse.operator.cluster.replicasCount }}
+        templates:
+          podTemplate: pod-template
+          volumeClaimTemplate: data-volume-template
+  templates:
+    podTemplates:
+      - name: pod-template
+        spec:
+          containers:
+            - name: clickhouse
+              image: clickhouse/clickhouse-server:{{ .Values.clickhouse.operator.version }}-alpine
+              resources:
+                requests:
+                  memory: {{ .Values.clickhouse.operator.resources.requests.memory | quote }}
+                  cpu: {{ .Values.clickhouse.operator.resources.requests.cpu | quote }}
+                limits:
+                  memory: {{ .Values.clickhouse.operator.resources.limits.memory | quote }}
+                  cpu: {{ .Values.clickhouse.operator.resources.limits.cpu | quote }}
+    volumeClaimTemplates:
+      - name: data-volume-template
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: {{ .Values.clickhouse.operator.storage.size | quote }}
+          {{- if .Values.clickhouse.operator.storage.storageClass }}
+          storageClassName: {{ .Values.clickhouse.operator.storage.storageClass | quote }}
+          {{- else if .Values.global.storageClass }}
+          storageClassName: {{ .Values.global.storageClass | quote }}
+          {{- end }}
+      - name: log-volume-template
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: "10Gi"
+          {{- if .Values.clickhouse.operator.storage.storageClass }}
+          storageClassName: {{ .Values.clickhouse.operator.storage.storageClass | quote }}
+          {{- else if .Values.global.storageClass }}
+          storageClassName: {{ .Values.global.storageClass | quote }}
+          {{- end }}
+{{- if .Values.clickhouse.operator.zookeeper.enabled }}
+---
+apiVersion: "clickhouse-keeper.altinity.com/v1"
+kind: "ClickHouseKeeperInstallation"
+metadata:
+  name: {{ .Values.clickhouse.operator.name }}-keeper
+  labels:
+    {{- include "flexprice.labels" . | nindent 4 }}
+spec:
+  configuration:
+    clusters:
+      - name: {{ .Values.clickhouse.operator.name }}-keeper
+        layout:
+          replicasCount: {{ .Values.clickhouse.operator.zookeeper.replicas }}
+  templates:
+    volumeClaimTemplates:
+      - name: keeper-data
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: {{ .Values.clickhouse.operator.zookeeper.storage.size | quote }}
+          {{- if .Values.clickhouse.operator.storage.storageClass }}
+          storageClassName: {{ .Values.clickhouse.operator.storage.storageClass | quote }}
+          {{- else if .Values.global.storageClass }}
+          storageClassName: {{ .Values.global.storageClass | quote }}
+          {{- end }}
+{{- end }}
+{{- end }}

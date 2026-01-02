@@ -1,0 +1,42 @@
+---
+# Helm Test: Verify API Service is Running
+# This test checks that the FlexPrice API is accessible and responding
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "flexprice.fullname" . }}-test-api
+  labels:
+    {{- include "flexprice.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": before-this,failed
+spec:
+  serviceAccountName: {{ include "flexprice.serviceAccountName" . }}
+  containers:
+    - name: test-api-connectivity
+      image: curlimages/curl:latest
+      imagePullPolicy: IfNotPresent
+      command:
+        - sh
+        - -c
+        - |
+          echo "Testing FlexPrice API..."
+          
+          # Get the service
+          SERVICE={{ include "flexprice.fullname" . }}
+          PORT=8080
+          
+          # Wait for service to be available
+          echo "Waiting for service to be ready..."
+          for i in {1..30}; do
+            if curl -f http://$SERVICE:$PORT/health 2>/dev/null; then
+              echo "✓ API is healthy"
+              exit 0
+            fi
+            echo "Attempt $i/30: waiting for API..."
+            sleep 2
+          done
+          
+          echo "✗ API failed to become healthy"
+          exit 1
+  restartPolicy: Never

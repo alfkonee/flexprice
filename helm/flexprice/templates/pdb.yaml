@@ -1,0 +1,55 @@
+{{- if .Values.flexprice.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "flexprice.fullname" . }}-api
+  labels:
+    {{- include "flexprice.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  {{- if .Values.flexprice.podDisruptionBudget.minAvailable }}
+  minAvailable: {{ .Values.flexprice.podDisruptionBudget.minAvailable }}
+  {{- end }}
+  {{- if .Values.flexprice.podDisruptionBudget.maxUnavailable }}
+  maxUnavailable: {{ .Values.flexprice.podDisruptionBudget.maxUnavailable }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "flexprice.api.selectorLabels" . | nindent 6 }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "flexprice.fullname" . }}-consumer
+  labels:
+    {{- include "flexprice.labels" . | nindent 4 }}
+    app.kubernetes.io/component: consumer
+spec:
+  {{- if .Values.flexprice.podDisruptionBudget.minAvailable }}
+  minAvailable: {{ .Values.flexprice.podDisruptionBudget.minAvailable }}
+  {{- end }}
+  {{- if .Values.flexprice.podDisruptionBudget.maxUnavailable }}
+  maxUnavailable: {{ .Values.flexprice.podDisruptionBudget.maxUnavailable }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "flexprice.consumer.selectorLabels" . | nindent 6 }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "flexprice.fullname" . }}-worker
+  labels:
+    {{- include "flexprice.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  {{- if .Values.flexprice.podDisruptionBudget.minAvailable }}
+  minAvailable: {{ .Values.flexprice.podDisruptionBudget.minAvailable }}
+  {{- end }}
+  {{- if .Values.flexprice.podDisruptionBudget.maxUnavailable }}
+  maxUnavailable: {{ .Values.flexprice.podDisruptionBudget.maxUnavailable }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "flexprice.worker.selectorLabels" . | nindent 6 }}
+{{- end }}

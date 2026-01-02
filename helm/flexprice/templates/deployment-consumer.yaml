@@ -1,0 +1,99 @@
+{{- if .Values.flexprice.consumer.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "flexprice.fullname" . }}-consumer
+  labels:
+    {{- include "flexprice.labels" . | nindent 4 }}
+    app.kubernetes.io/component: consumer
+spec:
+  replicas: {{ .Values.flexprice.consumer.replicas }}
+  selector:
+    matchLabels:
+      {{- include "flexprice.consumer.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- with .Values.flexprice.consumer.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "flexprice.consumer.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "flexprice.serviceAccountName" . }}
+      initContainers:
+        - name: wait-for-dependencies
+          image: busybox:1.36
+          command: ['sh', '-c']
+          args:
+            - |
+              echo "Waiting for PostgreSQL..."
+              until nc -z {{ include "flexprice.postgres.host" . }} {{ include "flexprice.postgres.port" . }}; do
+                sleep 2
+              done
+              echo "PostgreSQL is ready!"
+              
+              echo "Waiting for Kafka..."
+              until nc -z {{ (split ":" (include "flexprice.kafka.brokers" .))._0 }} {{ (split ":" (include "flexprice.kafka.brokers" .))._1 | default "9092" }}; do
+                sleep 2
+              done
+              echo "Kafka is ready!"
+              
+              echo "Waiting for ClickHouse..."
+              until nc -z {{ (split ":" (include "flexprice.clickhouse.address" .))._0 }} {{ (split ":" (include "flexprice.clickhouse.address" .))._1 | default "9000" }}; do
+                sleep 2
+              done
+              echo "ClickHouse is ready!"
+      containers:
+        - name: consumer
+          image: "{{ .Values.flexprice.image.repository }}:{{ .Values.flexprice.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.flexprice.image.pullPolicy }}
+          env:
+            - name: FLEXPRICE_DEPLOYMENT_MODE
+              value: "consumer"
+            {{- include "flexprice.envVars" . | nindent 12 }}
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - "pgrep -f 'flexprice.*consumer' || exit 1"
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.flexprice.consumer.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /app/config
+              readOnly: true
+            - name: rbac-config
+              mountPath: /app/config/rbac
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "flexprice.fullname" . }}-config
+        - name: rbac-config
+          configMap:
+            name: {{ include "flexprice.fullname" . }}-rbac
+      {{- with .Values.flexprice.consumer.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.flexprice.consumer.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.flexprice.consumer.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

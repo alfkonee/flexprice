@@ -1,3 +1,44 @@
+# Define the SLEEP command based on the operating system
+ifeq ($(OS),Windows_NT)
+	DETECTED_OS := Windows
+	# Use PowerShell sleep to avoid timeout quirks and allow comments on the same line
+	SLEEP = powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Sleep -Seconds 5"
+	NULL_REDIRECT = >nul 2>&1
+	SHELL_RUN = powershell -NoProfile -ExecutionPolicy Bypass -Command
+else
+	DETECTED_OS := Unix
+	SLEEP = sleep 5
+	NULL_REDIRECT = >/dev/null 2>&1
+	SHELL_RUN = sh -c
+endif
+
+# Auto-detect container runtime (docker or podman)
+ifeq ($(CONTAINER_RUNTIME),)
+    # Check if docker is available
+    ifeq ($(shell docker version $(NULL_REDIRECT) && echo yes),yes)
+        CONTAINER_RUNTIME = docker
+    else ifeq ($(shell podman version $(NULL_REDIRECT) && echo yes),yes)
+        CONTAINER_RUNTIME = podman
+    else
+        $(error Neither docker nor podman found. Please install one of them)
+    endif
+endif
+
+# Detect compose command format (docker compose vs docker-compose)
+ifeq ($(CONTAINER_RUNTIME),docker)
+    # Check if 'docker compose' works (newer Docker)
+    ifeq ($(shell docker compose version $(NULL_REDIRECT) && echo yes),yes)
+        COMPOSE = docker compose
+    else ifeq ($(shell docker-compose version $(NULL_REDIRECT) && echo yes),yes)
+        # Fall back to docker-compose (older Docker)
+        COMPOSE = docker-compose
+    else
+        $(error Docker is installed but docker compose or docker-compose command not found)
+    endif
+else
+    COMPOSE = $(CONTAINER_RUNTIME) compose
+endif
+
 .PHONY: swagger-clean
 swagger-clean:
 	rm -rf docs/swagger
@@ -40,11 +81,11 @@ swagger-fix-refs:
 
 .PHONY: up
 up:
-	docker compose up -d --build
+	$(COMPOSE) up -d --build
 
 .PHONY: down
 down:
-	docker compose down
+	$(COMPOSE) down
 
 .PHONY: run-server
 run-server:
@@ -109,38 +150,45 @@ init-db: up migrate-postgres migrate-clickhouse generate-ent migrate-ent seed-db
 # Run postgres migrations
 migrate-postgres:
 	@echo "Running Postgres migrations..."
-	@sleep 5  # Wait for postgres to be ready
-	@docker compose exec -T postgres psql -U flexprice -d flexprice -c "CREATE SCHEMA IF NOT EXISTS extensions;"
-	@docker compose exec -T postgres psql -U flexprice -d flexprice -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\" SCHEMA extensions;"
+	@$(SLEEP)
+	@$(COMPOSE) exec -T postgres psql -U flexprice -d flexprice -c "CREATE SCHEMA IF NOT EXISTS extensions;"
+	@$(COMPOSE) exec -T postgres psql -U flexprice -d flexprice -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\" SCHEMA extensions;"
 	@echo "Postgres migrations complete"
 
 # Run clickhouse migrations
 migrate-clickhouse:
 	@echo "Running Clickhouse migrations..."
-	@sleep 5  # Wait for clickhouse to be ready
+	@$(SLEEP)
+ifeq ($(DETECTED_OS),Windows)
+	@$(SHELL_RUN) "Get-ChildItem -Path migrations/clickhouse -Filter '*.sql' | ForEach-Object { Write-Host \"Running migration: $$_.FullName\"; Get-Content $$_.FullName | $(COMPOSE) exec -T clickhouse clickhouse-client --user=flexprice --password=flexprice123 --database=flexprice --multiquery }"
+else
 	@for file in migrations/clickhouse/*.sql; do \
 		if [ -f "$$file" ]; then \
 			echo "Running migration: $$file"; \
-			docker compose exec -T clickhouse clickhouse-client --user=flexprice --password=flexprice123 --database=flexprice --multiquery < "$$file"; \
+			$(COMPOSE) exec -T clickhouse clickhouse-client --user=flexprice --password=flexprice123 --database=flexprice --multiquery < "$$file"; \
 		fi \
 	done
+endif
 	@echo "Clickhouse migrations complete"
 
 # Seed initial data
 seed-db:
 	@echo "Running Seed data migration..."
-	@docker compose exec -T postgres psql -U flexprice -d flexprice -f /docker-entrypoint-initdb.d/V1__seed.sql
+	@$(COMPOSE) exec -T postgres psql -U flexprice -d flexprice -f /docker-entrypoint-initdb.d/V1__seed.sql
 	@echo "Postgres seed data migration complete"
 
 # Initialize kafka topics
 .PHONY: init-kafka
 init-kafka:
 	@echo "Creating Kafka topics..."
+ifeq ($(DETECTED_OS),Windows)
+	@$(SHELL_RUN) "for ($$i = 1; $$i -le 5; $$i++) { $(COMPOSE) exec -T kafka kafka-topics --bootstrap-server kafka:9092 --list > $$null 2>&1; if ($$?) { Write-Host \"Kafka is ready!\"; $(COMPOSE) exec -T kafka kafka-topics --create --if-not-exists --bootstrap-server kafka:9092 --topic events --partitions 1 --replication-factor 1 --config cleanup.policy=delete --config retention.ms=604800000; Write-Host \"Kafka topics created successfully\"; exit 0 } Write-Host \"Kafka not ready yet, waiting...\"; Start-Sleep -Seconds 5 } Write-Host \"Error: Kafka failed to become ready after 5 attempts\"; exit 1"
+else
 	@for i in 1 2 3 4 5; do \
 		echo "Attempt $$i: Checking if Kafka is ready..."; \
-		if docker compose exec -T kafka kafka-topics --bootstrap-server kafka:9092 --list >/dev/null 2>&1; then \
+		if $(COMPOSE) exec -T kafka kafka-topics --bootstrap-server kafka:9092 --list >/dev/null 2>&1; then \
 			echo "Kafka is ready!"; \
-			docker compose exec -T kafka kafka-topics --create --if-not-exists \
+			$(COMPOSE) exec -T kafka kafka-topics --create --if-not-exists \
 				--bootstrap-server kafka:9092 \
 				--topic events \
 				--partitions 1 \
@@ -151,19 +199,20 @@ init-kafka:
 			exit 0; \
 		fi; \
 		echo "Kafka not ready yet, waiting..."; \
-		sleep 5; \
+		$(SLEEP) \
 	done; \
 	echo "Error: Kafka failed to become ready after 5 attempts"; \
 	exit 1
+endif
 
-# Clean all docker containers and volumes related to the project
+# Clean all containers and volumes related to the project
 .PHONY: clean-docker
 clean-docker:
-	@echo "Cleaning all docker containers and volumes..."
-	@docker compose down -v
-	@docker container prune -f
-	@docker volume rm $$(docker volume ls -q | grep flexprice) 2>/dev/null || true
-	@echo "Docker cleanup complete"
+	@echo "Cleaning all containers and volumes..."
+	@$(COMPOSE) down -v
+	@$(CONTAINER_RUNTIME) container prune -f
+	@$(CONTAINER_RUNTIME) volume rm $$($(CONTAINER_RUNTIME) volume ls -q | grep flexprice) 2>/dev/null || true
+	@echo "Container cleanup complete"
 
 # Full local setup
 .PHONY: setup-local
@@ -174,28 +223,28 @@ setup-local: up init-db init-kafka
 .PHONY: clean-start
 clean-start:
 	@make down
-	@docker compose down -v
+	@$(COMPOSE) down -v
 	@make setup-local
 
 # Build the flexprice image separately
 .PHONY: build-image
 build-image:
 	@echo "Building flexprice image..."
-	@docker compose build flexprice-build
+	@$(COMPOSE) build flexprice-build
 	@echo "Flexprice image built successfully"
 
 # Start only the flexprice services
 .PHONY: start-flexprice
 start-flexprice:
 	@echo "Starting flexprice services..."
-	@docker compose up -d flexprice-api flexprice-consumer flexprice-worker
+	@$(COMPOSE) up -d flexprice-api flexprice-consumer flexprice-worker
 	@echo "Flexprice services started successfully"
 
 # Stop only the flexprice services
 .PHONY: stop-flexprice
 stop-flexprice:
 	@echo "Stopping flexprice services..."
-	@docker compose stop flexprice-api flexprice-consumer flexprice-worker
+	@$(COMPOSE) stop flexprice-api flexprice-consumer flexprice-worker
 	@echo "Flexprice services stopped successfully"
 
 # Restart only the flexprice services
@@ -208,7 +257,7 @@ restart-flexprice: stop-flexprice start-flexprice
 dev-setup:
 	@echo "Setting up FlexPrice development environment..."
 	@echo "Step 1: Starting infrastructure services..."
-	@docker compose up -d postgres kafka clickhouse temporal temporal-ui
+	@$(COMPOSE) up postgres kafka clickhouse temporal temporal-ui -d
 	@echo "Step 2: Building FlexPrice application image..."
 	@make build-image
 	@echo "Step 3: Running database migrations and initializing Kafka..."
@@ -244,7 +293,7 @@ apply-migration:
 
 .PHONY: docker-build-local
 docker-build-local:
-	docker compose build flexprice-build
+	$(COMPOSE) build flexprice-build
 
 .PHONY: install-typst
 install-typst:
@@ -261,9 +310,9 @@ install-openapi-generator:
 generate-sdk: generate-go-sdk generate-python-sdk generate-javascript-sdk
 	@echo "All SDKs generated successfully with custom files"
 
-# Regenerate all SDKs (clean + generate)
-regenerate-sdk: clean-sdk generate-sdk
-	@echo "All SDKs regenerated successfully with custom files"
+# Regenerate all SDKs (clean + generate) - DEPRECATED: Use speakeasy-regenerate-sdk
+# regenerate-sdk: clean-sdk generate-sdk
+# 	@echo "All SDKs regenerated successfully with custom files"
 
 # Update swagger and regenerate all SDKs
 update-sdk: swagger regenerate-sdk
@@ -416,3 +465,140 @@ test-github-workflow:
 	 --action-offline-mode
 
 .PHONY: sdk-publish-js sdk-publish-py sdk-publish-go sdk-publish-all sdk-publish-all-with-version test-github-workflow show-custom-files help-sdk
+
+# =============================================================================
+# Speakeasy SDK Generation (New Pipeline)
+# =============================================================================
+
+.PHONY: speakeasy-install speakeasy-generate speakeasy-validate speakeasy-test
+
+speakeasy-install:
+	@echo "Installing Speakeasy CLI..."
+	@brew install speakeasy-api/homebrew-tap/speakeasy || curl -fsSL https://raw.githubusercontent.com/speakeasy-api/speakeasy/main/install.sh | sh
+	@speakeasy --version
+
+speakeasy-validate:
+	@echo "Validating OpenAPI spec..."
+	@speakeasy validate openapi --schema docs/swagger/swagger-3-0.json
+
+speakeasy-clean:
+	@echo "Cleaning generated SDK files..."
+	@echo "Removing Go SDK generated files..."
+	@find api/go -type f -name "*.go" ! -path "*/examples/*" ! -path "*/custom/*" ! -name "helpers.go" -delete 2>/dev/null || true
+	@find api/go -type d -name ".speakeasy" -exec rm -rf {} + 2>/dev/null || true
+	@rm -f api/go/go.mod api/go/go.sum 2>/dev/null || true
+	@rm -rf api/go/.devcontainer api/go/.openapi-generator api/go/.travis.yml 2>/dev/null || true
+	@rm -rf api/go/docs api/go/models api/go/internal api/go/types api/go/optionalnullable api/go/retry api/go/speakeasyusagegen 2>/dev/null || true
+	@rm -f api/go/*.md api/go/.git* 2>/dev/null || true
+	@echo "Removing Python SDK generated files..."
+	@find api/python -type f -name "*.py" ! -path "*/examples/*" ! -name "async_utils.py" -delete 2>/dev/null || true
+	@rm -rf api/python/src api/python/dist api/python/build api/python/*.egg-info 2>/dev/null || true
+	@rm -f api/python/setup.py api/python/pyproject.toml api/python/poetry.lock 2>/dev/null || true
+	@rm -rf api/python/.devcontainer api/python/docs 2>/dev/null || true
+	@rm -f api/python/*.md api/python/.git* 2>/dev/null || true
+	@echo "Removing JavaScript SDK generated files..."
+	@find api/javascript/src -type f -name "*.ts" ! -path "*/apis/CustomerPortal.ts" -delete 2>/dev/null || true
+	@rm -rf api/javascript/dist api/javascript/node_modules 2>/dev/null || true
+	@rm -f api/javascript/package*.json api/javascript/tsconfig*.json 2>/dev/null || true
+	@rm -rf api/javascript/.devcontainer api/javascript/docs 2>/dev/null || true
+	@rm -f api/javascript/*.md api/javascript/.git* 2>/dev/null || true
+	@echo "✓ SDK cleanup complete"
+
+speakeasy-generate:
+	@echo "Generating SDKs with Speakeasy..."
+	@speakeasy run
+
+regenerate-sdk: go-sdk
+	@echo "✓ Go SDK regenerated (Python/JS commented out for now)"
+
+speakeasy-test:
+	@echo "Testing generated SDKs..."
+	@echo "Testing JavaScript SDK..."
+	@cd api/javascript && npm ci && npm run build && npm test
+	@echo "Testing Python SDK..."
+	@cd api/python && pip install -e . && pytest
+	@echo "Testing Go SDK..."
+	@cd api/go && go mod tidy && go test ./...
+
+# New unified SDK generation with Speakeasy
+speakeasy-sdk: swagger speakeasy-generate
+	@echo "✓ SDKs generated successfully with Speakeasy"
+
+# =============================================================================
+# Go SDK Generation with Speakeasy (Production Pipeline)
+# =============================================================================
+
+.PHONY: speakeasy-go-sdk speakeasy-copy-go-custom clean-go-sdk go-sdk regenerate-go-sdk
+
+# Generate Go SDK only with Speakeasy
+speakeasy-go-sdk:
+	@echo "🔨 Generating Go SDK with Speakeasy..."
+	@speakeasy run --target flexprice-go
+	@echo "✓ Go SDK generated successfully"
+
+# Copy custom files to Go SDK (post-generation)
+speakeasy-copy-go-custom:
+	@echo "📋 Copying custom files to Go SDK..."
+	@if [ ! -d "api/go" ]; then \
+		echo "❌ Error: api/go directory not found. Run 'make speakeasy-go-sdk' first"; \
+		exit 1; \
+	fi
+	@# Copy helpers.go
+	@if [ -f "api/custom/go/helpers.go" ]; then \
+		cp api/custom/go/helpers.go api/go/; \
+		echo "✓ Copied helpers.go"; \
+	else \
+		echo "⚠️  Warning: api/custom/go/helpers.go not found"; \
+	fi
+	@# Copy async.go
+	@if [ -f "api/custom/go/async.go" ]; then \
+		cp api/custom/go/async.go api/go/; \
+		echo "✓ Copied async.go"; \
+	else \
+		echo "⚠️  Warning: api/custom/go/async.go not found"; \
+	fi
+	@# Copy examples directory
+	@if [ -d "api/custom/go/examples" ]; then \
+		rm -rf api/go/examples 2>/dev/null || true; \
+		cp -r api/custom/go/examples api/go/; \
+		echo "✓ Copied examples/ directory"; \
+	else \
+		echo "⚠️  Warning: api/custom/go/examples not found"; \
+	fi
+	@echo "✅ Custom files copied successfully"
+
+# Clean only Go SDK
+clean-go-sdk:
+	@echo "🧹 Cleaning Go SDK..."
+	@rm -rf api/go
+	@echo "✓ Go SDK cleaned"
+
+# Complete Go SDK pipeline: clean → generate → copy custom files → build
+go-sdk: clean-go-sdk swagger speakeasy-go-sdk speakeasy-copy-go-custom
+	@echo "🧪 Testing Go SDK compilation..."
+	@cd api/go && go mod tidy && go build ./...
+	@echo "✅ Go SDK ready for publishing!"
+
+# Quick regeneration (no clean, faster for development)
+regenerate-go-sdk: swagger speakeasy-go-sdk speakeasy-copy-go-custom
+	@echo "✓ Go SDK regenerated"
+
+
+# Testing all SDKs
+test-speakeasy-sdks: speakeasy-test
+	@echo "✓ All SDK tests passed"
+
+# Migration helpers
+speakeasy-migrate:
+	@echo "Running Speakeasy migration..."
+	@./scripts/migrate-to-speakeasy.sh
+
+speakeasy-compare:
+	@echo "Comparing old and new SDK structures..."
+	@./scripts/compare-sdks.sh
+
+speakeasy-archive-old:
+	@echo "Archiving old OpenAPI Generator pipeline..."
+	@./scripts/archive-old-pipeline.sh
+
+.PHONY: speakeasy-sdk test-speakeasy-sdks speakeasy-migrate speakeasy-compare speakeasy-archive-old

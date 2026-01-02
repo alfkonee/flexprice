@@ -1,0 +1,207 @@
+# Example: Using All External Services
+# This configuration uses external connection strings for all dependencies
+# Use this when you already have PostgreSQL, ClickHouse, Kafka, and Temporal
+# deployed in your cluster or externally.
+
+# FlexPrice application settings
+flexprice:
+  image:
+    repository: flexprice/flexprice
+    tag: "latest"
+  
+  deploymentMode: "production"
+  
+  api:
+    replicas: 3
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "250m"
+      limits:
+        memory: "2Gi"
+        cpu: "2000m"
+  
+  consumer:
+    replicas: 3
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "250m"
+      limits:
+        memory: "2Gi"
+        cpu: "2000m"
+  
+  worker:
+    replicas: 2
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "250m"
+      limits:
+        memory: "2Gi"
+        cpu: "2000m"
+  
+  ingress:
+    enabled: true
+    className: "nginx"
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+      nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    hosts:
+      - host: api.flexprice.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - secretName: flexprice-api-tls
+        hosts:
+          - api.flexprice.example.com
+  
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+  
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+
+# Use external PostgreSQL
+postgres:
+  external:
+    enabled: true
+    host: "postgres-primary.database.svc.cluster.local"
+    port: 5432
+    user: "flexprice"
+    database: "flexprice"
+    sslMode: "require"
+    readerHost: "postgres-replica.database.svc.cluster.local"
+    readerPort: 5432
+    # Use existing secret for password
+    existingSecret: "flexprice-postgres-credentials"
+    passwordKey: "password"
+  operator:
+    install: false  # Do not install operator as a dependency
+    enabled: false  # Do not deploy PostgreSQL using operator
+  maxOpenConns: 25
+  maxIdleConns: 10
+  connMaxLifetimeMinutes: 30
+
+# Use external ClickHouse
+clickhouse:
+  external:
+    enabled: true
+    address: "clickhouse.analytics.svc.cluster.local:9000"
+    tls: true
+    user: "flexprice"
+    database: "flexprice"
+    # Use existing secret for password
+    existingSecret: "flexprice-clickhouse-credentials"
+    passwordKey: "password"
+  operator:
+    install: false  # Do not install operator as a dependency
+    enabled: false  # Do not deploy ClickHouse using operator
+
+# Use external Kafka
+kafka:
+  external:
+    enabled: true
+    brokers:
+      - "kafka-0.messaging.svc.cluster.local:9092"
+      - "kafka-1.messaging.svc.cluster.local:9092"
+      - "kafka-2.messaging.svc.cluster.local:9092"
+    tls: true
+    sasl:
+      enabled: true
+      mechanism: "SCRAM-SHA-512"
+      # Use existing secret for SASL credentials
+      existingSecret: "flexprice-kafka-credentials"
+      userKey: "username"
+      passwordKey: "password"
+  operator:
+    install: false  # Do not install operator as a dependency
+    enabled: false  # Do not deploy Kafka using operator
+  consumerGroup: "flexprice-consumer-prod"
+  clientId: "flexprice-client-prod"
+
+# Use external Temporal
+temporal:
+  external:
+    enabled: true
+    address: "temporal-frontend.workflow.svc.cluster.local:7233"
+    namespace: "flexprice"
+    tls: true
+    # Use existing secret for API key
+    existingSecret: "flexprice-temporal-credentials"
+    apiKeySecretKey: "api-key"
+  operator:
+    install: false  # Do not install Temporal as a dependency
+    enabled: false  # Do not deploy Temporal using chart
+  taskQueue: "billing-task-queue"
+  clientName: "flexprice-client-prod"
+
+# Authentication
+auth:
+  provider: "flexprice"
+  # Use existing secret for auth secret
+secrets:
+  existingSecret: "flexprice-app-secrets"
+  authSecretKey: "auth-secret"
+  encryptionKeySecretKey: "encryption-key"
+
+# Observability
+observability:
+  sentry:
+    enabled: true
+    dsn: "https://your-sentry-dsn@sentry.io/project"
+    environment: "production"
+    sampleRate: 0.1
+  
+  pyroscope:
+    enabled: true
+    serverAddress: "https://profiles.example.com"
+    applicationName: "flexprice-prod"
+  
+  logging:
+    level: "info"
+
+# Email (using Resend)
+email:
+  enabled: true
+  fromAddress: "billing@flexprice.example.com"
+  replyTo: "support@flexprice.example.com"
+  existingSecret: "flexprice-email-credentials"
+  apiKeySecretKey: "resend-api-key"
+
+# S3 for invoice storage
+s3:
+  enabled: true
+  region: "us-east-1"
+  invoice:
+    bucket: "flexprice-invoices-prod"
+    presignExpiryDuration: "1h"
+    keyPrefix: "invoices/"
+  credentials:
+    # Use IRSA (IAM Roles for Service Accounts) instead of static credentials
+    existingSecret: ""
+
+# Webhook configuration
+webhook:
+  enabled: true
+  svix:
+    enabled: true
+    baseUrl: "https://api.svix.com"
+    existingSecret: "flexprice-svix-credentials"
+    authTokenKey: "auth-token"
+
+# Network policies
+networkPolicy:
+  enabled: true
+  ingressNamespaces:
+    - ingress-nginx
+    - istio-system
+
+# Skip migrations (run separately in production)
+migrations:
+  enabled: false

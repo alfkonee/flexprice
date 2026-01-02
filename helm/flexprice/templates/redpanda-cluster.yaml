@@ -1,0 +1,54 @@
+{{/*
+Redpanda Operator Cluster
+Only created when kafka.operator.enabled is true and kafka.external.enabled is false
+*/}}
+{{- if and .Values.kafka.operator.enabled (not .Values.kafka.external.enabled) }}
+---
+apiVersion: cluster.redpanda.com/v1alpha2
+kind: Redpanda
+metadata:
+  name: {{ .Values.kafka.operator.name }}
+  labels:
+    {{- include "flexprice.labels" . | nindent 4 }}
+spec:
+  chartRef: {}
+  clusterSpec:
+    statefulset:
+      replicas: {{ .Values.kafka.operator.replicas }}
+    resources:
+      cpu:
+        cores: {{ .Values.kafka.operator.resources.cpu | quote }}
+      memory:
+        container:
+          max: {{ .Values.kafka.operator.resources.memory | quote }}
+    storage:
+      persistentVolume:
+        enabled: true
+        size: {{ .Values.kafka.operator.storage.size | quote }}
+        {{- if .Values.kafka.operator.storage.storageClass }}
+        storageClass: {{ .Values.kafka.operator.storage.storageClass | quote }}
+        {{- else if .Values.global.storageClass }}
+        storageClass: {{ .Values.global.storageClass | quote }}
+        {{- end }}
+    config:
+      cluster:
+        auto_create_topics_enabled: {{ .Values.kafka.operator.config.autoCreateTopicsEnabled }}
+        group_initial_rebalance_delay: {{ .Values.kafka.operator.config.groupInitialRebalanceDelayMs }}
+    listeners:
+      kafka:
+        port: 9092
+      admin:
+        port: 9644
+      http:
+        enabled: true
+        port: 8082
+      {{- if .Values.kafka.operator.schemaRegistry.enabled }}
+      schemaRegistry:
+        enabled: true
+        port: 8081
+      {{- end }}
+    {{- if .Values.kafka.operator.console.enabled }}
+    console:
+      enabled: true
+    {{- end }}
+{{- end }}
