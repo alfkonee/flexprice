@@ -42,7 +42,7 @@ spec:
       kafka:
         port: 9093
         tls:
-          enabled: {{ default false .Values.kafka.operator.tls.enabled }}
+          enabled: {{ .Values.kafka.operator.tls.enabled | default false }}
       admin:
         port: 9644
       http:

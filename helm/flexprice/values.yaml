@@ -337,6 +337,9 @@ kafka:
     config:
       autoCreateTopicsEnabled: false
       groupInitialRebalanceDelayMs: 0
+    # TLS configuration
+    tls:
+      enabled: false
     # Enable Schema Registry
     schemaRegistry:
       enabled: false
