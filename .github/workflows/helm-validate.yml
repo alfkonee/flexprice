@@ -248,21 +248,70 @@ jobs:
              [ "${{ needs.helm-template.result }}" = "failure" ] || \
              [ "${{ needs.chart-schema.result }}" = "failure" ] || \
              [ "${{ needs.template-defaults.result }}" = "failure" ]; then
-            echo "❌ Helm chart validation failed"
+            echo "::error::Helm chart validation failed"
             exit 1
           else
-            echo "✅ All Helm chart validations passed!"
+            echo "::notice::✅ All Helm chart validations passed!"
           fi
 
-      - name: Report results
+      - name: Generate summary report
         if: always()
         run: |
-          echo "## Helm Chart Validation Results"
-          echo ""
-          echo "| Check | Result |"
-          echo "|-------|--------|"
-          echo "| Linting | ${{ needs.helm-lint.result == 'success' && '✅ PASS' || '❌ FAIL' }} |"
-          echo "| Template Rendering | ${{ needs.helm-template.result == 'success' && '✅ PASS' || '❌ FAIL' }} |"
-          echo "| Test Configuration | ${{ needs.helm-test.result == 'success' && '✅ PASS' || '❌ FAIL' }} |"
-          echo "| Schema Validation | ${{ needs.chart-schema.result == 'success' && '✅ PASS' || '❌ FAIL' }} |"
-          echo "| Default Values | ${{ needs.template-defaults.result == 'success' && '✅ PASS' || '❌ FAIL' }} |"
+          {
+            echo "# 📋 Helm Chart Validation Results"
+            echo ""
+            echo "## Summary"
+            echo ""
+            echo "| Check | Status |"
+            echo "|-------|--------|"
+            echo "| Linting | ${{ needs.helm-lint.result == 'success' && '✅ PASS' || '❌ FAIL' }} |"
+            echo "| Template Rendering | ${{ needs.helm-template.result == 'success' && '✅ PASS' || '❌ FAIL' }} |"
+            echo "| Test Configuration | ${{ needs.helm-test.result == 'success' && '✅ PASS' || '❌ FAIL' }} |"
+            echo "| Schema Validation | ${{ needs.chart-schema.result == 'success' && '✅ PASS' || '❌ FAIL' }} |"
+            echo "| Default Values | ${{ needs.template-defaults.result == 'success' && '✅ PASS' || '❌ FAIL' }} |"
+            echo ""
+            echo "## Detailed Results"
+            echo ""
+            echo "### Helm Lint"
+            echo "- **Status**: ${{ needs.helm-lint.result }}"
+            echo "- **Purpose**: Validates chart syntax and best practices"
+            echo ""
+            echo "### Template Rendering"
+            echo "- **Status**: ${{ needs.helm-template.result }}"
+            echo "- **Purpose**: Tests template rendering with multiple configuration scenarios"
+            echo "- **Configurations tested**:"
+            echo "  - values-simple-operators.yaml"
+            echo "  - values-operators.yaml"
+            echo "  - values-external.yaml"
+            echo ""
+            echo "### Test Configuration"
+            echo "- **Status**: ${{ needs.helm-test.result }}"
+            echo "- **Purpose**: Validates Helm test definitions"
+            echo ""
+            echo "### Schema Validation"
+            echo "- **Status**: ${{ needs.chart-schema.result }}"
+            echo "- **Purpose**: Validates Chart.yaml and values.yaml structure"
+            echo ""
+            echo "### Default Values"
+            echo "- **Status**: ${{ needs.template-defaults.result }}"
+            echo "- **Purpose**: Verifies templates render correctly with default values"
+            echo ""
+          } >> $GITHUB_STEP_SUMMARY
+
+      - name: Set workflow status badge
+        if: always()
+        run: |
+          if [ "${{ needs.helm-lint.result }}" = "success" ] && \
+             [ "${{ needs.helm-template.result }}" = "success" ] && \
+             [ "${{ needs.chart-schema.result }}" = "success" ] && \
+             [ "${{ needs.template-defaults.result }}" = "success" ]; then
+            echo "VALIDATION_STATUS=✅ PASSED" >> $GITHUB_ENV
+            echo "::notice::🎉 All validations passed successfully!"
+          else
+            echo "VALIDATION_STATUS=❌ FAILED" >> $GITHUB_ENV
+            echo "::error::Some validations failed. Please check the logs above."
+          fi
+
+      - name: Output final status
+        run: |
+          echo "::notice::Validation Status: ${{ env.VALIDATION_STATUS }}"
