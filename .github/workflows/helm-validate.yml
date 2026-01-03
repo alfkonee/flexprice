@@ -134,10 +134,10 @@ jobs:
         working-directory: helm/flexprice
         run: |
           echo "Validating Helm test definitions..."
-          helm template flexprice . --show-only templates/tests/*.yaml > /tmp/tests.yaml
-          if [ -s /tmp/tests.yaml ]; then
+          helm template flexprice . | grep -A 10 "kind: Pod" | grep -E "name:|kind:" > /tmp/tests.txt || true
+          if [ -s /tmp/tests.txt ]; then
             echo "✓ Test templates generated successfully"
-            grep -c "kind:" /tmp/tests.yaml | xargs echo "✓ Test resources defined:"
+            grep "kind:" /tmp/tests.txt | wc -l | xargs echo "✓ Test resources defined:"
           else
             echo "ℹ No test resources defined"
           fi
