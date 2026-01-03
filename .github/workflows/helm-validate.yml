@@ -44,7 +44,7 @@ jobs:
 
       - name: Lint FlexPrice chart
         working-directory: helm/flexprice
-        run: helm lint . -v
+        run: helm lint .
 
   helm-template:
     name: Template Validation
