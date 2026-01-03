@@ -1,6 +1,7 @@
 {{/*
 Redpanda Operator Cluster
 Only created when kafka.operator.enabled is true and kafka.external.enabled is false
+Based on Redpanda Operator v25.x documentation
 */}}
 {{- if and .Values.kafka.operator.enabled (not .Values.kafka.external.enabled) }}
 ---
@@ -15,12 +16,9 @@ spec:
   clusterSpec:
     statefulset:
       replicas: {{ .Values.kafka.operator.replicas }}
-    resources:
-      cpu:
-        cores: {{ .Values.kafka.operator.resources.cpu | quote }}
-      memory:
-        container:
-          max: {{ .Values.kafka.operator.resources.memory | quote }}
+      initContainers:
+        setDataDirOwnership:
+          enabled: true
     storage:
       persistentVolume:
         enabled: true
@@ -30,13 +28,21 @@ spec:
         {{- else if .Values.global.storageClass }}
         storageClass: {{ .Values.global.storageClass | quote }}
         {{- end }}
+    resources:
+      cpu:
+        cores: {{ .Values.kafka.operator.resources.cpu | quote }}
+      memory:
+        container:
+          max: {{ .Values.kafka.operator.resources.memory | quote }}
     config:
       cluster:
         auto_create_topics_enabled: {{ .Values.kafka.operator.config.autoCreateTopicsEnabled }}
-        group_initial_rebalance_delay: {{ .Values.kafka.operator.config.groupInitialRebalanceDelayMs }}
+        group_initial_rebalance_delay_ms: {{ .Values.kafka.operator.config.groupInitialRebalanceDelayMs }}
     listeners:
       kafka:
-        port: 9092
+        port: 9093
+        tls:
+          enabled: {{ default false .Values.kafka.operator.tls.enabled }}
       admin:
         port: 9644
       http:

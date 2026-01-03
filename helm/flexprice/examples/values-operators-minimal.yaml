@@ -1,9 +1,9 @@
-# Example: Using Kubernetes Operators
-# This configuration uses Stackgres, Altinity ClickHouse, and Redpanda operators
-# to provision all dependencies within your Kubernetes cluster.
+# Example: Minimal Operator Setup
+# This configuration uses operators with minimal settings - single node instances
+# without advanced features like backups, replication, or HA.
 # 
-# This example installs all operators as chart dependencies.
-# If operators are already installed, set *.operator.install to false.
+# Good for: Development, testing, small deployments
+# Not for: Production (use values-operators.yaml instead)
 
 # FlexPrice application settings
 flexprice:
@@ -14,34 +14,34 @@ flexprice:
   deploymentMode: "production"
   
   api:
-    replicas: 2
+    replicas: 1
     resources:
       requests:
         memory: "256Mi"
         cpu: "100m"
       limits:
-        memory: "1Gi"
-        cpu: "1000m"
+        memory: "512Mi"
+        cpu: "500m"
   
   consumer:
-    replicas: 2
+    replicas: 1
     resources:
       requests:
         memory: "256Mi"
         cpu: "100m"
       limits:
-        memory: "1Gi"
-        cpu: "1000m"
+        memory: "512Mi"
+        cpu: "500m"
   
   worker:
-    replicas: 2
+    replicas: 1
     resources:
       requests:
         memory: "256Mi"
         cpu: "100m"
       limits:
-        memory: "1Gi"
-        cpu: "1000m"
+        memory: "512Mi"
+        cpu: "500m"
   
   ingress:
     enabled: true
@@ -52,7 +52,7 @@ flexprice:
           - path: /
             pathType: Prefix
 
-# PostgreSQL via Stackgres Operator
+# PostgreSQL via Stackgres Operator - Minimal single node
 postgres:
   external:
     enabled: false
@@ -63,43 +63,34 @@ postgres:
     enabled: true
     name: "flexprice-postgres"
     version: "17"
-    instances: 3
+    instances: 1  # Single node - no HA
     storage:
-      size: "100Gi"
-      storageClass: "standard"
+      size: "10Gi"
+      storageClass: ""  # Use default storage class
     resources:
       requests:
-        memory: "500Mi"
-        cpu: "500m"
+        memory: "256Mi"
+        cpu: "250m"
       limits:
-        memory: "2Gi"
-        cpu: "4000m"
+        memory: "1Gi"
+        cpu: "1000m"
     connectionPooling:
-      enabled: true
-      maxConnections: 400
+      enabled: false  # Disabled for minimal setup
     backup:
-      enabled: true
-      retention: 14
-      schedule: "0 2 * * *"
-      storage:
-        type: "s3"
-        bucket: "flexprice-backups"
-        path: "postgres"
-        region: "us-east-1"
-        secretName: "backup-s3-credentials"
+      enabled: false  # No backups in minimal setup
     postgresConfig:
-      max_connections: "400"
-      shared_buffers: "1GB"
-      work_mem: "128MB"
-      maintenance_work_mem: "256MB"
-      effective_cache_size: "3GB"
+      max_connections: "100"
+      shared_buffers: "256MB"
+      work_mem: "16MB"
+      maintenance_work_mem: "64MB"
+      effective_cache_size: "512MB"
   user: "flexprice"
   password: ""  # Auto-generated
   database: "flexprice"
-  maxOpenConns: 25
-  maxIdleConns: 10
+  maxOpenConns: 10
+  maxIdleConns: 5
 
-# ClickHouse via Altinity Operator
+# ClickHouse via Altinity Operator - Minimal single node
 clickhouse:
   external:
     enabled: false
@@ -111,31 +102,28 @@ clickhouse:
     name: "flexprice-clickhouse"
     version: "24.9"
     cluster:
-      shardsCount: 2
-      replicasCount: 2
+      shardsCount: 1  # Single shard - no sharding
+      replicasCount: 1  # Single replica - no HA
     storage:
       size: "10Gi"
-      storageClass: "standard"
+      storageClass: ""  # Use default storage class
     resources:
       requests:
-        memory: "1Gi"
-        cpu: "2000m"
+        memory: "512Mi"
+        cpu: "500m"
       limits:
-        memory: "8Gi"
-        cpu: "4000m"
+        memory: "2Gi"
+        cpu: "2000m"
     settings:
-      max_memory_usage: "12000000000"
-      max_concurrent_queries: "200"
+      max_memory_usage: "2000000000"
+      max_concurrent_queries: "50"
     zookeeper:
-      enabled: true
-      replicas: 3
-      storage:
-        size: "2Gi"
+      enabled: false  # Not needed for single replica
   user: "flexprice"
   password: ""  # Auto-generated
   database: "flexprice"
 
-# Redpanda via Redpanda Operator
+# Redpanda via Redpanda Operator - Minimal single node
 kafka:
   external:
     enabled: false
@@ -146,40 +134,40 @@ kafka:
     enabled: true
     name: "flexprice-redpanda"
     version: "v24.2.7"
-    replicas: 3
+    replicas: 1  # Single node - no replication
     storage:
-      size: "200Gi"
-      storageClass: "standard"
+      size: "10Gi"
+      storageClass: ""  # Use default storage class
     resources:
-      cpu: "2"
-      memory: "8Gi"
+      cpu: "500m"
+      memory: "1Gi"
     config:
       autoCreateTopicsEnabled: false
-      groupInitialRebalanceDelayMs: 3000
+      groupInitialRebalanceDelayMs: 0
     schemaRegistry:
-      enabled: true
+      enabled: false  # Disabled for minimal setup
     console:
-      enabled: true
+      enabled: false  # Disabled for minimal setup
   consumerGroup: "flexprice-consumer"
   clientId: "flexprice-client"
   topics:
     - name: "events"
-      partitions: 24
-      replicationFactor: 3
+      partitions: 6
+      replicationFactor: 1  # Single replica
     - name: "events_lazy"
-      partitions: 12
-      replicationFactor: 3
+      partitions: 3
+      replicationFactor: 1
     - name: "events_post_processing"
-      partitions: 12
-      replicationFactor: 3
+      partitions: 3
+      replicationFactor: 1
     - name: "system_events"
-      partitions: 6
-      replicationFactor: 3
+      partitions: 2
+      replicationFactor: 1
     - name: "wallet_alert"
-      partitions: 6
-      replicationFactor: 3
+      partitions: 2
+      replicationFactor: 1
 
-# Temporal (deploy via chart)
+# Temporal (deploy via chart) - Uses same PostgreSQL
 temporal:
   external:
     enabled: false
@@ -191,7 +179,6 @@ temporal:
   namespace: "default"
   taskQueue: "billing-task-queue"
   # Temporal subchart configuration (when operator.install is true)
-  # Note: You must configure the database connection for Temporal
   server:
     config:
       persistence:
@@ -199,11 +186,11 @@ temporal:
           driver: "sql"
           sql:
             driver: "postgres12"
-            host: "flexprice-postgres"  # Uses the same PostgreSQL as FlexPrice
+            host: "flexprice-postgres"
             port: 5432
             database: "temporal"
-            user: "temporal"
-            password: "temporal-password"  # Change this in production!
+            user: "flexprice"
+            password: "change-me-in-production"
         visibility:
           driver: "sql"
           sql:
@@ -211,8 +198,8 @@ temporal:
             host: "flexprice-postgres"
             port: 5432
             database: "temporal_visibility"
-            user: "temporal"
-            password: "temporal-password"  # Change this in production!
+            user: "flexprice"
+            password: "change-me-in-production"
 
 # Authentication
 auth:
@@ -227,11 +214,11 @@ observability:
   logging:
     level: "info"
 
-# Email (disabled by default)
+# Email (disabled)
 email:
   enabled: false
 
-# S3 (disabled by default)
+# S3 (disabled)
 s3:
   enabled: false
 

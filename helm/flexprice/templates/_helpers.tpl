@@ -89,6 +89,8 @@ Get PostgreSQL host
 {{- define "flexprice.postgres.host" -}}
 {{- if .Values.postgres.external.enabled }}
 {{- .Values.postgres.external.host }}
+{{- else if .Values.postgres.operator.enabled }}
+{{- printf "%s.%s.svc.cluster.local" .Values.postgres.operator.name .Release.Namespace }}
 {{- else }}
 {{- printf "%s-postgres" (include "flexprice.fullname" .) }}
 {{- end }}
@@ -100,6 +102,8 @@ Get PostgreSQL reader host
 {{- define "flexprice.postgres.readerHost" -}}
 {{- if .Values.postgres.external.enabled }}
 {{- default (include "flexprice.postgres.host" .) .Values.postgres.external.readerHost }}
+{{- else if .Values.postgres.operator.enabled }}
+{{- printf "%s-replica.%s.svc.cluster.local" .Values.postgres.operator.name .Release.Namespace }}
 {{- else }}
 {{- printf "%s-postgres-replica" (include "flexprice.fullname" .) }}
 {{- end }}
@@ -150,14 +154,34 @@ Get PostgreSQL SSL mode
 {{- end }}
 
 {{/*
-Get ClickHouse address
+Get ClickHouse hostname
+*/}}
+{{- define "flexprice.clickhouse.host" -}}
+{{- if .Values.clickhouse.external.enabled -}}
+{{- (split ":" .Values.clickhouse.external.address)._0 -}}
+{{- else if .Values.clickhouse.operator.enabled -}}
+{{- printf "chi-%s-%s-0-0.%s.svc.cluster.local" .Values.clickhouse.operator.name .Values.clickhouse.operator.name .Release.Namespace -}}
+{{- else -}}
+{{- printf "%s-clickhouse" (include "flexprice.fullname" .) -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+Get ClickHouse port
+*/}}
+{{- define "flexprice.clickhouse.port" -}}
+{{- if .Values.clickhouse.external.enabled -}}
+{{- (split ":" .Values.clickhouse.external.address)._1 | default "9000" -}}
+{{- else -}}
+{{- "9000" -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+Get ClickHouse address (for backward compatibility)
 */}}
 {{- define "flexprice.clickhouse.address" -}}
-{{- if .Values.clickhouse.external.enabled }}
-{{- .Values.clickhouse.external.address }}
-{{- else }}
-{{- printf "%s-clickhouse:9000" (include "flexprice.fullname" .) }}
-{{- end }}
+{{- printf "%s:%s" (include "flexprice.clickhouse.host" .) (include "flexprice.clickhouse.port" .) -}}
 {{- end }}
 
 {{/*
@@ -194,14 +218,40 @@ Get ClickHouse database
 {{- end }}
 
 {{/*
-Get Kafka brokers
+Get Kafka broker hostname
+*/}}
+{{- define "flexprice.kafka.host" -}}
+{{- if .Values.kafka.external.enabled -}}
+{{- (split ":" (first (.Values.kafka.external.brokers | default list)))._0 -}}
+{{- else if .Values.kafka.operator.enabled -}}
+{{- printf "%s.%s.svc.cluster.local" .Values.kafka.operator.name .Release.Namespace -}}
+{{- else -}}
+{{- printf "%s-redpanda" (include "flexprice.fullname" .) -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+Get Kafka broker port
+*/}}
+{{- define "flexprice.kafka.port" -}}
+{{- if .Values.kafka.external.enabled -}}
+{{- (split ":" (first (.Values.kafka.external.brokers | default list)))._1 | default "9092" -}}
+{{- else -}}
+{{- "9093" -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+Get Kafka brokers (for backward compatibility)
 */}}
 {{- define "flexprice.kafka.brokers" -}}
-{{- if .Values.kafka.external.enabled }}
-{{- .Values.kafka.external.brokers | join "," }}
-{{- else }}
-{{- printf "%s-redpanda:9092" (include "flexprice.fullname" .) }}
-{{- end }}
+{{- if .Values.kafka.external.enabled -}}
+{{- .Values.kafka.external.brokers | join "," -}}
+{{- else if .Values.kafka.operator.enabled -}}
+{{- printf "%s.%s.svc.cluster.local:9093" .Values.kafka.operator.name .Release.Namespace -}}
+{{- else -}}
+{{- printf "%s-redpanda:9092" (include "flexprice.fullname" .) -}}
+{{- end -}}
 {{- end }}
 
 {{/*
@@ -227,7 +277,29 @@ Get Kafka SASL enabled
 {{- end }}
 
 {{/*
-Get Temporal address
+Get Temporal hostname
+*/}}
+{{- define "flexprice.temporal.host" -}}
+{{- if (dig "external" "enabled" false .Values.temporal) }}
+{{- (split ":" .Values.temporal.external.address)._0 }}
+{{- else }}
+{{- printf "%s-temporal-frontend" (include "flexprice.fullname" .) }}
+{{- end }}
+{{- end }}
+
+{{/*
+Get Temporal port
+*/}}
+{{- define "flexprice.temporal.port" -}}
+{{- if (dig "external" "enabled" false .Values.temporal) }}
+{{- (split ":" .Values.temporal.external.address)._1 | default "7233" }}
+{{- else }}
+{{- "7233" }}
+{{- end }}
+{{- end }}
+
+{{/*
+Get Temporal address (for backward compatibility)
 */}}
 {{- define "flexprice.temporal.address" -}}
 {{- if (dig "external" "enabled" false .Values.temporal) }}

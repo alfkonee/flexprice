@@ -219,6 +219,9 @@ postgres:
       max_connections: "200"
       shared_buffers: "256MB"
       work_mem: "64MB"
+    # PostgreSQL extensions to install
+    extensions:
+      - name: btree_gin
 
   # Database credentials (used when operator is enabled)
   user: "flexprice"
