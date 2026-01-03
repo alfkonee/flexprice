@@ -5,6 +5,16 @@ Production-ready Helm chart for deploying FlexPrice backend with flexible infras
 ## Quick Start
 
 ```bash
+# Add required Helm repositories
+helm repo add stackgres https://stackgres.io/downloads/stackgres-k8s/stackgres/helm/
+helm repo add altinity https://docs.altinity.com/clickhouse-operator/
+helm repo add redpanda https://charts.redpanda.com
+helm repo add temporal https://go.temporal.io/helm-charts
+helm repo update
+
+# Build chart dependencies
+helm dependency build
+
 # Test the chart (before installing)
 ./test-chart.sh              # Linux/macOS
 .\test-chart.ps1             # Windows
@@ -13,6 +23,27 @@ Production-ready Helm chart for deploying FlexPrice backend with flexible infras
 helm install flexprice . \
   --set postgres.operator.install=true \
   --set clickhouse.operator.install=true \
+  --set kafka.operator.install=true
+```
+
+```powershell
+# Add required Helm repositories
+helm repo add stackgres https://stackgres.io/downloads/stackgres-k8s/stackgres/helm/
+helm repo add altinity https://docs.altinity.com/clickhouse-operator/
+helm repo add redpanda https://charts.redpanda.com
+helm repo add temporal https://go.temporal.io/helm-charts
+helm repo update
+
+# Build chart dependencies
+helm dependency build
+
+# Test the chart (before installing)
+.\test-chart.ps1             # Windows
+
+# Install with all operators
+helm install flexprice . `
+  --set postgres.operator.install=true `
+  --set clickhouse.operator.install=true `
   --set kafka.operator.install=true
 ```
 
@@ -40,11 +71,17 @@ If you prefer to manage operators separately:
 
 1. **Stackgres Operator** (for PostgreSQL)
    ```bash
-   kubectl apply -f 'https://stackgres.io/install/latest/stackgres-operator.yaml'
+   helm install --create-namespace --namespace databases stackgres-operator --set-string adminui.service.type=ClusterIP https://stackgres.io/downloads/stackgres-k8s/stackgres/latest/helm/stackgres-operator.tgz
+   ```
+   ```powershell
+   helm install --create-namespace --namespace databases stackgres-operator --set-string adminui.service.type=ClusterIP https://stackgres.io/downloads/stackgres-k8s/stackgres/latest/helm/stackgres-operator.tgz
    ```
 
 2. **Altinity ClickHouse Operator**
    ```bash
+   kubectl apply -f https://raw.githubusercontent.com/Altinity/clickhouse-operator/master/deploy/operator/clickhouse-operator-install-bundle.yaml
+   ```
+   ```powershell
    kubectl apply -f https://raw.githubusercontent.com/Altinity/clickhouse-operator/master/deploy/operator/clickhouse-operator-install-bundle.yaml
    ```
 
@@ -53,9 +90,17 @@ If you prefer to manage operators separately:
    helm repo add redpanda https://charts.redpanda.com
    helm install redpanda-operator redpanda/redpanda-operator
    ```
+   ```powershell
+   helm repo add redpanda https://charts.redpanda.com
+   helm install redpanda-operator redpanda/redpanda-operator
+   ```
 
 4. **Temporal**
    ```bash
+   helm repo add temporal https://go.temporal.io/helm-charts
+   helm install temporal temporal/temporal
+   ```
+   ```powershell
    helm repo add temporal https://go.temporal.io/helm-charts
    helm install temporal temporal/temporal
    ```
@@ -87,6 +132,21 @@ helm install flexprice flexprice/flexprice \
   --set postgres.operator.install=true \
   --set clickhouse.operator.install=true \
   --set kafka.operator.install=true \
+  --set temporal.operator.install=true
+```
+
+```powershell
+# Add the helm repo (if published)
+helm repo add flexprice https://charts.flexprice.io
+
+# Update dependencies (required before first install)
+helm dependency update
+
+# Install with operators managed by this chart
+helm install flexprice flexprice/flexprice `
+  --set postgres.operator.install=true `
+  --set clickhouse.operator.install=true `
+  --set kafka.operator.install=true `
   --set temporal.operator.install=true
 ```
 
@@ -185,6 +245,420 @@ flexprice:
 Install with custom values:
 
 ```bash
+helm install flexprice flexprice/flexprice -f my-values.yaml
+```
+
+```powershell
+helm install flexprice flexprice/flexprice -f my-values.yaml
+```
+
+## Deployment Scenarios
+
+This section provides step-by-step deployment guides for common scenarios.
+
+### Scenario 1: Complete Setup with Internal Operators (Recommended for Development)
+
+Deploy everything with operators managed by Helm - PostgreSQL, ClickHouse, Redpanda, and Temporal all created by Kubernetes operators.
+
+**Prerequisites:**
+- Kubernetes cluster (1.20+)
+- Helm 3.0+
+- Internet access to download container images
+
+**Steps:**
+
+1. **Create namespace:**
+   ```bash
+   kubectl create namespace billing
+   ```
+   ```powershell
+   kubectl create namespace billing
+   ```
+
+2. **Add Helm repositories:**
+   ```bash
+   helm repo add stackgres https://stackgres.io/downloads/stackgres-k8s/stackgres/helm/
+   helm repo add altinity https://docs.altinity.com/clickhouse-operator/
+   helm repo add redpanda https://charts.redpanda.com
+   helm repo add temporal https://go.temporal.io/helm-charts
+   helm repo update
+   ```
+   ```powershell
+   helm repo add stackgres https://stackgres.io/downloads/stackgres-k8s/stackgres/helm/
+   helm repo add altinity https://docs.altinity.com/clickhouse-operator/
+   helm repo add redpanda https://charts.redpanda.com
+   helm repo add temporal https://go.temporal.io/helm-charts
+   helm repo update
+   ```
+
+3. **Build chart dependencies:**
+   ```bash
+   cd helm/flexprice
+   helm dependency build
+   ```
+   ```powershell
+   cd helm\flexprice
+   helm dependency build
+   ```
+
+4. **Create values file** (`values-operators.yaml`):
+   ```yaml
+   postgres:
+     operator:
+       install: true
+       enabled: true
+       name: fprice-pg
+       instances: 1
+       version: "17"
+       storage:
+         size: "50Gi"
+     password: "securepassword123"
+
+   clickhouse:
+     operator:
+       install: true
+       enabled: true
+       cluster:
+         name: fprice-ch
+         shards: 1
+         replicas: 1
+
+   kafka:
+     operator:
+       install: true
+       enabled: true
+       cluster:
+         name: fprice-rp
+         brokers: 1
+
+   temporal:
+     external:
+       enabled: true
+       address: "fprice-pg:5432"  # Temporal uses same PostgreSQL
+   ```
+
+5. **Install FlexPrice chart:**
+   ```bash
+   helm install flexprice . \
+     --namespace billing \
+     --create-namespace \
+     -f values-operators.yaml \
+     --timeout 15m
+   ```
+   ```powershell
+   helm install flexprice . `
+     --namespace billing `
+     --create-namespace `
+     -f values-operators.yaml `
+     --timeout 15m
+   ```
+
+6. **Deploy Temporal** (uses same Stackgres PostgreSQL):
+   ```bash
+   helm install temporal temporal/temporal \
+     --namespace billing \
+     -f examples/temporal-values-stackgres.yaml \
+     --timeout 10m
+   ```
+   ```powershell
+   helm install temporal temporal/temporal `
+     --namespace billing `
+     -f examples/temporal-values-stackgres.yaml `
+     --timeout 10m
+   ```
+
+7. **Verify deployment:**
+   ```bash
+   kubectl get pods -n billing
+   kubectl get svc -n billing
+   ```
+   ```powershell
+   kubectl get pods -n billing
+   kubectl get svc -n billing
+   ```
+
+**Expected Outcome:**
+- All pods in Running state (1/1 for most, 2/2 for services with sidecars)
+- PostgreSQL: `fprice-pg-0` (5/5)
+- ClickHouse: `chi-fprice-ch-fprice-ch-0-0-0` (2/2)
+- Redpanda: `fprice-rp-0` (2/2)
+- Temporal: `temporal-frontend`, `temporal-history`, `temporal-matching`, `temporal-worker` (all 1/1)
+- FlexPrice: `flexprice-api`, `flexprice-consumer`, `flexprice-worker` (all 1/1)
+
+---
+
+### Scenario 2: Operators Pre-installed, Using Operator CRDs Only
+
+Deploy if operators are already installed in your cluster by other means.
+
+**Prerequisites:**
+- Stackgres, Altinity ClickHouse, Redpanda, and Temporal operators already installed
+- Kubernetes cluster (1.20+)
+- Helm 3.0+
+
+**Steps:**
+
+1. **Verify operators are running:**
+   ```bash
+   kubectl get deployments --all-namespaces | grep -E "stackgres|clickhouse|redpanda|temporal"
+   ```
+   ```powershell
+   kubectl get deployments --all-namespaces | Select-String "stackgres|clickhouse|redpanda|temporal"
+   ```
+
+2. **Create values file** (`values-operators-only.yaml`):
+   ```yaml
+   postgres:
+     operator:
+       install: false  # Don't install operator
+       enabled: true   # Create SGCluster CRD
+       name: fprice-pg
+       version: "17"
+
+   clickhouse:
+     operator:
+       install: false
+       enabled: true
+       cluster:
+         name: fprice-ch
+
+   kafka:
+     operator:
+       install: false
+       enabled: true
+       cluster:
+         name: fprice-rp
+
+   temporal:
+     external:
+       enabled: true
+       address: "temporal-frontend.temporal.svc.cluster.local:7233"
+   ```
+
+3. **Install FlexPrice:**
+   ```bash
+   helm install flexprice . \
+     --namespace billing \
+     --create-namespace \
+     -f values-operators-only.yaml \
+     --timeout 10m
+   ```
+   ```powershell
+   helm install flexprice . `
+     --namespace billing `
+     --create-namespace `
+     -f values-operators-only.yaml `
+     --timeout 10m
+   ```
+
+4. **Deploy Temporal separately:**
+   ```bash
+   # Ensure Temporal is deployed in 'temporal' namespace
+   helm install temporal temporal/temporal \
+     --namespace temporal \
+     --create-namespace \
+     -f examples/temporal-values-stackgres.yaml
+   ```
+   ```powershell
+   helm install temporal temporal/temporal `
+     --namespace temporal `
+     --create-namespace `
+     -f examples/temporal-values-stackgres.yaml
+   ```
+
+5. **Verify:**
+   ```bash
+   kubectl get pods -n billing
+   kubectl get sgclusters,chi,redpanda -n billing
+   ```
+   ```powershell
+   kubectl get pods -n billing
+   kubectl get sgclusters,chi,redpanda -n billing
+   ```
+
+---
+
+### Scenario 3: Hybrid - Internal PostgreSQL/ClickHouse, External Redpanda and Temporal
+
+Use Kubernetes operators for stateful services but point to existing Redpanda and Temporal clusters.
+
+**Prerequisites:**
+- Stackgres and Altinity ClickHouse operators installed
+- External Redpanda cluster (e.g., managed service)
+- External Temporal cluster (e.g., managed service)
+- Kubernetes cluster (1.20+)
+- Helm 3.0+
+
+**Steps:**
+
+1. **Create values file** (`values-hybrid.yaml`):
+   ```yaml
+   postgres:
+     operator:
+       install: false
+       enabled: true
+       name: fprice-pg
+       version: "17"
+       instances: 1
+
+   clickhouse:
+     operator:
+       install: false
+       enabled: true
+       cluster:
+         name: fprice-ch
+         shards: 1
+
+   # Use external Redpanda
+   kafka:
+     external:
+       enabled: true
+       brokers:
+         - "redpanda-0.redpanda.example.com:9092"
+         - "redpanda-1.redpanda.example.com:9092"
+         - "redpanda-2.redpanda.example.com:9092"
+
+   # Use external Temporal
+   temporal:
+     external:
+       enabled: true
+       address: "temporal-frontend.example.com:7233"
+   ```
+
+2. **Install FlexPrice:**
+   ```bash
+   helm install flexprice . \
+     --namespace billing \
+     --create-namespace \
+     -f values-hybrid.yaml
+   ```
+   ```powershell
+   helm install flexprice . `
+     --namespace billing `
+     --create-namespace `
+     -f values-hybrid.yaml
+   ```
+
+3. **Verify:**
+   ```bash
+   kubectl get pods -n billing
+   # Check logs to verify connectivity to external services
+   kubectl logs -n billing deployment/flexprice-api
+   ```
+   ```powershell
+   kubectl get pods -n billing
+   kubectl logs -n billing deployment/flexprice-api
+   ```
+
+---
+
+### Scenario 4: Full External Setup
+
+Use completely external services - PostgreSQL, ClickHouse, Redpanda, and Temporal all managed outside Kubernetes.
+
+**Prerequisites:**
+- External PostgreSQL 13+ database
+- External ClickHouse 21+ service
+- External Redpanda cluster
+- External Temporal server
+- Kubernetes cluster (1.20+)
+- Helm 3.0+
+
+**Steps:**
+
+1. **Create external databases:**
+   ```sql
+   -- On your external PostgreSQL
+   CREATE DATABASE flexprice;
+   CREATE DATABASE temporal;
+   CREATE DATABASE temporal_visibility;
+   
+   -- On temporal_visibility database, enable btree_gin
+   CREATE EXTENSION IF NOT EXISTS btree_gin;
+   ```
+
+2. **Create values file** (`values-external.yaml`):
+   ```yaml
+   postgres:
+     external:
+       enabled: true
+       host: "postgres.example.com"
+       port: 5432
+       user: "flexprice"
+       password: "secure-password"
+       database: "flexprice"
+       sslMode: "require"
+
+   clickhouse:
+     external:
+       enabled: true
+       address: "clickhouse.example.com:9000"
+       user: "flexprice"
+       password: "secure-password"
+       database: "flexprice"
+
+   kafka:
+     external:
+       enabled: true
+       brokers:
+         - "kafka-1.example.com:9092"
+         - "kafka-2.example.com:9092"
+         - "kafka-3.example.com:9092"
+
+   temporal:
+     external:
+       enabled: true
+       address: "temporal.example.com:7233"
+
+   # Don't run migrations with external databases
+   migrations:
+     enabled: false
+   ```
+
+3. **Run migrations manually** (if needed):
+   ```bash
+   # Create FlexPrice tables
+   flexprice-cli migrate up --database postgres://flexprice:password@postgres.example.com:5432/flexprice
+   
+   # Temporal schema is usually pre-configured
+   ```
+
+4. **Install FlexPrice:**
+   ```bash
+   helm install flexprice . \
+     --namespace billing \
+     --create-namespace \
+     -f values-external.yaml
+   ```
+   ```powershell
+   helm install flexprice . `
+     --namespace billing `
+     --create-namespace `
+     -f values-external.yaml
+   ```
+
+5. **Verify:**
+   ```bash
+   kubectl get pods -n billing
+   kubectl logs -n billing deployment/flexprice-api
+   ```
+   ```powershell
+   kubectl get pods -n billing
+   kubectl logs -n billing deployment/flexprice-api
+   ```
+
+---
+
+## Key Configuration Files
+
+| File | Purpose |
+|------|---------|
+| `examples/values-simple-operators.yaml` | Single-instance setup with all operators |
+| `examples/values-operators.yaml` | Production setup with operators |
+| `examples/values-external.yaml` | External services configuration |
+| `examples/temporal-values-stackgres.yaml` | Temporal using Stackgres PostgreSQL |
+
+```powershell
 helm install flexprice flexprice/flexprice -f my-values.yaml
 ```
 
@@ -315,6 +789,14 @@ helm install flexprice ./flexprice -n flexprice
 helm test flexprice -n flexprice
 ```
 
+```powershell
+# Install the chart first
+helm install flexprice ./flexprice -n flexprice
+
+# Run all tests
+helm test flexprice -n flexprice
+```
+
 ### Run Specific Tests
 
 ```bash
@@ -337,9 +819,40 @@ helm test flexprice -n flexprice --tests test-temporal-connectivity
 helm test flexprice -n flexprice --tests test-deployments-status
 ```
 
+```powershell
+# Test API health
+helm test flexprice -n flexprice --tests test-api-health
+
+# Test database connectivity
+helm test flexprice -n flexprice --tests test-postgres-connectivity
+
+# Test analytics database
+helm test flexprice -n flexprice --tests test-clickhouse-connectivity
+
+# Test message broker
+helm test flexprice -n flexprice --tests test-kafka-connectivity
+
+# Test workflow engine
+helm test flexprice -n flexprice --tests test-temporal-connectivity
+
+# Test deployment status
+helm test flexprice -n flexprice --tests test-deployments-status
+```
+
 ### View Test Results
 
 ```bash
+# List all test pods
+kubectl get pods -l app.kubernetes.io/instance=flexprice,helm.sh/hook=test
+
+# View test output
+kubectl logs test-pod-name -n flexprice
+
+# Check test status
+kubectl describe pod test-pod-name -n flexprice
+```
+
+```powershell
 # List all test pods
 kubectl get pods -l app.kubernetes.io/instance=flexprice,helm.sh/hook=test
 
@@ -385,9 +898,17 @@ For detailed testing documentation, see [QUICK_TEST.md](QUICK_TEST.md) for quick
 helm upgrade flexprice flexprice/flexprice -f my-values.yaml
 ```
 
+```powershell
+helm upgrade flexprice flexprice/flexprice -f my-values.yaml
+```
+
 ## Uninstalling
 
 ```bash
+helm uninstall flexprice
+```
+
+```powershell
 helm uninstall flexprice
 ```
 
@@ -397,10 +918,18 @@ Note: This will not delete PersistentVolumeClaims created by the operators. To f
 kubectl delete pvc -l app.kubernetes.io/instance=flexprice
 ```
 
+```powershell
+kubectl delete pvc -l app.kubernetes.io/instance=flexprice
+```
+
 ## Troubleshooting
 
 ### Check pod status
 ```bash
+kubectl get pods -l app.kubernetes.io/instance=flexprice
+```
+
+```powershell
 kubectl get pods -l app.kubernetes.io/instance=flexprice
 ```
 
@@ -416,8 +945,24 @@ kubectl logs -l app.kubernetes.io/instance=flexprice,app.kubernetes.io/component
 kubectl logs -l app.kubernetes.io/instance=flexprice,app.kubernetes.io/component=worker -f
 ```
 
+```powershell
+# API logs
+kubectl logs -l app.kubernetes.io/instance=flexprice,app.kubernetes.io/component=api -f
+
+# Consumer logs
+kubectl logs -l app.kubernetes.io/instance=flexprice,app.kubernetes.io/component=consumer -f
+
+# Worker logs
+kubectl logs -l app.kubernetes.io/instance=flexprice,app.kubernetes.io/component=worker -f
+```
+
 ### Check migration job
 ```bash
+kubectl get jobs -l app.kubernetes.io/instance=flexprice
+kubectl logs job/flexprice-migrations
+```
+
+```powershell
 kubectl get jobs -l app.kubernetes.io/instance=flexprice
 kubectl logs job/flexprice-migrations
 ```
