@@ -3099,11 +3099,11 @@ func (s *invoiceService) mapFlexibleAnalyticsToLineItems(analyticsResponse *dto.
 
 		// Step 4: Calculate proportional costs for each group
 		lineItemUsageBreakdown := make([]dto.UsageBreakdownItem, 0, len(analyticsItems))
-		totalLineItemCost := lineItem.Amount
+		totalUsageRevenue := decimal.Zero
 		for _, analyticsItem := range analyticsItems {
 
 			if forceRealtimeRecalculation {
-				totalLineItemCost = totalLineItemCost.Add(analyticsItem.TotalCost)
+				totalUsageRevenue = totalUsageRevenue.Add(analyticsItem.TotalCost)
 			}
 			// Build grouped_by map from the analytics item
 			groupedBy := make(map[string]string)
@@ -3142,7 +3142,9 @@ func (s *invoiceService) mapFlexibleAnalyticsToLineItems(analyticsResponse *dto.
 
 		// Update the line item quantity and amount with totals from breakdown
 		lineItem.Quantity = totalUsageForLineItem
-		lineItem.Amount = totalLineItemCost
+		if forceRealtimeRecalculation {
+			lineItem.Amount = totalUsageRevenue
+		}
 
 		// Assign to response
 		usageBreakdownResponse[lineItemID] = lineItemUsageBreakdown
