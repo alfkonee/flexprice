@@ -1,0 +1,102 @@
+# Temporal values for FlexPrice setup using Stackgres PostgreSQL
+# This configuration uses the same Stackgres PostgreSQL cluster as FlexPrice
+# The Stackgres cluster must have btree_gin extension enabled (see values.yaml postgres.operator.extensions)
+# and the temporal/temporal_visibility databases created via the SGScript
+
+server:
+  image:
+    repository: docker.io/temporalio/server
+    tag: 1.29.1
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  config:
+    persistence:
+      defaultStore: default
+      visibilityStore: visibility
+      default:
+        driver: "sql"
+        sql:
+          driver: "postgres12"
+          # Stackgres PostgreSQL service name (adjust based on your postgres.operator.name)
+          host: fprice-pg
+          port: 5432
+          database: "temporal"
+          user: "postgres"
+          # Get password: kubectl get secret fprice-pg -n billing -o jsonpath='{.data.superuser-password}' | base64 -d
+          password: "da25-3449-4427-813"
+          maxConns: 20
+          maxConnLifetime: "1h"
+      visibility:
+        driver: "sql"
+        sql:
+          driver: "postgres12"
+          host: fprice-pg
+          port: 5432
+          database: "temporal_visibility"
+          user: "postgres"
+          password: "da25-3449-4427-813"
+          maxConns: 20
+          maxConnLifetime: "1h"
+
+# Disable Cassandra
+cassandra:
+  enabled: false
+
+# Disable bundled PostgreSQL - using Stackgres
+postgresql:
+  enabled: false
+
+# Disable MySQL
+mysql:
+  enabled: false
+
+# Disable monitoring for minimal setup
+prometheus:
+  enabled: false
+
+grafana:
+  enabled: false
+
+elasticsearch:
+  enabled: false
+
+# Enable web UI
+web:
+  enabled: true
+  image:
+    repository: docker.io/temporalio/ui
+    tag: 2.36.0
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+# Admin tools - using server image as it contains admin-tools
+admintools:
+  enabled: true
+  image:
+    repository: docker.io/temporalio/admin-tools
+    tag: 1.29
+
+# Schema setup image
+schema:
+  setup:
+    enabled: true
+    image:
+      repository: docker.io/temporalio/admin-tools
+      tag: 1.29
+  update:
+    enabled: true
+    image:
+      repository: docker.io/temporalio/admin-tools
+      tag: 1.29

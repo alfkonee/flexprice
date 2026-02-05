@@ -14,7 +14,7 @@ spec:
   serviceAccountName: {{ include "flexprice.serviceAccountName" . }}
   containers:
     - name: test-deployments-status
-      image: bitnami/kubectl:latest
+      image: docker.io/alpine/k8s:1.31.4
       imagePullPolicy: IfNotPresent
       command:
         - sh

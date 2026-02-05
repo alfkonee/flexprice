@@ -1,21 +1,27 @@
 apiVersion: v2
 name: flexprice
-description: A Helm chart for deploying FlexPrice backend with its dependencies
+description: A Helm chart for deploying FlexPrice backend with flexible infrastructure options
 type: application
 version: 0.1.0
 appVersion: "1.0.0"
+icon: https://raw.githubusercontent.com/flexprice/flexprice/main/assets/logo.png
+
 keywords:
+  - flexprice
   - billing
   - pricing
   - metering
   - usage-based-billing
   - subscription
+
 home: https://github.com/flexprice/flexprice
 sources:
   - https://github.com/flexprice/flexprice
+
 maintainers:
   - name: FlexPrice Team
     url: https://github.com/flexprice
+
 dependencies:
   # ==========================================================================
   # Stackgres Operator - PostgreSQL with HA, connection pooling, and backups

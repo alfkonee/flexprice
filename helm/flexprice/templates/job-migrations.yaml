@@ -41,19 +41,6 @@ spec:
               done
               echo "PostgreSQL is ready!"
         {{- if .Values.migrations.clickhouse.enabled }}
-        - name: wait-for-clickhouse
-          image: busybox:1.36
-          command: ['sh', '-c']
-          args:
-            - |
-              CH_HOST="{{ (split ":" (include "flexprice.clickhouse.address" .))._0 }}"
-              CH_PORT="{{ (split ":" (include "flexprice.clickhouse.address" .))._1 | default "9000" }}"
-              echo "Waiting for ClickHouse at ${CH_HOST}:${CH_PORT}..."
-              until nc -z ${CH_HOST} ${CH_PORT}; do
-                echo "ClickHouse not ready, waiting..."
-                sleep 5
-              done
-              echo "ClickHouse is ready!"
         {{- end }}
         {{- if .Values.migrations.kafka.enabled }}
         - name: wait-for-kafka
@@ -74,25 +61,39 @@ spec:
       containers:
         {{- if .Values.migrations.postgres.enabled }}
         - name: postgres-migrations
-          image: postgres:17-alpine
+          image: docker.io/library/postgres:17-alpine
           command: ['/bin/sh', '-c']
           args:
             - |
               set -e
               echo "Running PostgreSQL migrations..."
               
+              # For Stackgres operator, use postgres superuser. For external, use configured user.
+              INIT_USER="${POSTGRES_INIT_USER:-postgres}"
+              INIT_PASSWORD="${POSTGRES_INIT_PASSWORD:-$POSTGRES_PASSWORD}"
+              
               # Wait for database to be fully ready
-              until PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_HOST -p $POSTGRES_PORT -U $POSTGRES_USER -d $POSTGRES_DB -c "SELECT 1" > /dev/null 2>&1; do
+              until PGPASSWORD="$INIT_PASSWORD" psql -h $POSTGRES_HOST -p $POSTGRES_PORT -U "$INIT_USER" -d postgres -c "SELECT 1" > /dev/null 2>&1; do
                 echo "Waiting for PostgreSQL to accept connections..."
                 sleep 2
               done
               
+              # If using Stackgres operator, create the flexprice user
+              if [ "$USE_STACKGRES_OPERATOR" = "true" ]; then
+                echo "Creating flexprice database user..."
+                PGPASSWORD="$INIT_PASSWORD" psql -h $POSTGRES_HOST -p $POSTGRES_PORT -U "$INIT_USER" -d postgres -c "DROP USER IF EXISTS $POSTGRES_USER" || true
+                PGPASSWORD="$INIT_PASSWORD" psql -h $POSTGRES_HOST -p $POSTGRES_PORT -U "$INIT_USER" -d postgres -c "CREATE USER $POSTGRES_USER WITH PASSWORD '$POSTGRES_PASSWORD'"
+              fi
+              
               # Create Temporal database if it doesn't exist
               echo "Creating Temporal database if not exists..."
-              PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_HOST -p $POSTGRES_PORT -U $POSTGRES_USER -d postgres -c "SELECT 1 FROM pg_database WHERE datname = 'temporal'" | grep -q 1 || \
-                PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_HOST -p $POSTGRES_PORT -U $POSTGRES_USER -d postgres -c "CREATE DATABASE temporal"
+              PGPASSWORD="$INIT_PASSWORD" psql -h $POSTGRES_HOST -p $POSTGRES_PORT -U "$INIT_USER" -d postgres -c "DROP DATABASE IF EXISTS temporal" || true
+              PGPASSWORD="$INIT_PASSWORD" psql -h $POSTGRES_HOST -p $POSTGRES_PORT -U "$INIT_USER" -d postgres -c "CREATE DATABASE temporal"
               
-              PGPASSWORD=$POSTGRES_PASSWORD psql -h $POSTGRES_HOST -p $POSTGRES_PORT -U $POSTGRES_USER -d postgres -c "GRANT ALL PRIVILEGES ON DATABASE temporal TO $POSTGRES_USER" || true
+              # Grant privileges
+              echo "Granting privileges..."
+              PGPASSWORD="$INIT_PASSWORD" psql -h $POSTGRES_HOST -p $POSTGRES_PORT -U "$INIT_USER" -d postgres -c "GRANT ALL PRIVILEGES ON DATABASE $POSTGRES_DB TO $POSTGRES_USER" || true
+              PGPASSWORD="$INIT_PASSWORD" psql -h $POSTGRES_HOST -p $POSTGRES_PORT -U "$INIT_USER" -d postgres -c "GRANT ALL PRIVILEGES ON DATABASE temporal TO $POSTGRES_USER" || true
               
               echo "PostgreSQL migrations completed!"
           env:
@@ -109,18 +110,28 @@ spec:
                   key: {{ if .Values.postgres.external.existingSecret }}{{ .Values.postgres.external.passwordKey }}{{ else }}password{{ end }}
             - name: POSTGRES_DB
               value: {{ include "flexprice.postgres.database" . | quote }}
+            {{- if .Values.postgres.operator.enabled }}
+            - name: USE_STACKGRES_OPERATOR
+              value: "true"
+            - name: POSTGRES_INIT_USER
+              value: "postgres"
+            - name: POSTGRES_INIT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: fprice-pg
+                  key: superuser-password
+            {{- end }}
         {{- end }}
         {{- if .Values.migrations.clickhouse.enabled }}
         - name: clickhouse-migrations
-          image: clickhouse/clickhouse-client:24.9-alpine
+          image: docker.io/clickhouse/clickhouse-server:24.9.1-alpine
           command: ['/bin/sh', '-c']
           args:
             - |
               set -e
               echo "Running ClickHouse migrations..."
               
-              CH_HOST="{{ (split ":" (include "flexprice.clickhouse.address" .))._0 }}"
-              CH_PORT="{{ (split ":" (include "flexprice.clickhouse.address" .))._1 | default "9000" }}"
+              # CH_HOST and CH_PORT are set via environment variables
               
               # Wait for ClickHouse to be ready
               until clickhouse-client --host=$CH_HOST --port=$CH_PORT --user=$CH_USER --password=$CH_PASSWORD --query="SELECT 1" > /dev/null 2>&1; do
@@ -229,6 +240,10 @@ spec:
               
               echo "ClickHouse migrations completed!"
           env:
+            - name: CH_HOST
+              value: {{ include "flexprice.clickhouse.host" . | quote }}
+            - name: CH_PORT
+              value: {{ include "flexprice.clickhouse.port" . | quote }}
             - name: CH_USER
               value: {{ include "flexprice.clickhouse.user" . | quote }}
             - name: CH_PASSWORD
@@ -242,7 +257,7 @@ spec:
         {{- if .Values.migrations.kafka.enabled }}
         - name: kafka-topic-init
           {{- if and .Values.kafka.operator.enabled (not .Values.kafka.external.enabled) }}
-          image: redpandadata/redpanda:{{ .Values.kafka.operator.version }}
+          image: docker.io/redpandadata/redpanda:{{ .Values.kafka.operator.version }}
           command: ['/bin/sh', '-c']
           args:
             - |
@@ -265,7 +280,7 @@ spec:
               echo "Topic creation completed!"
               rpk topic list --brokers=$BROKER
           {{- else }}
-          image: confluentinc/cp-kafka:7.7.1
+          image: docker.io/confluentinc/cp-kafka:7.7.1
           command: ['/bin/sh', '-c']
           args:
             - |

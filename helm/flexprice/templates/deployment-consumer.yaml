@@ -34,22 +34,32 @@ spec:
           args:
             - |
               echo "Waiting for PostgreSQL..."
-              until nc -z {{ include "flexprice.postgres.host" . }} {{ include "flexprice.postgres.port" . }}; do
+              until nc -z {{ include "flexprice.postgres.host" . | quote }} {{ include "flexprice.postgres.port" . | quote }}; do
                 sleep 2
               done
               echo "PostgreSQL is ready!"
               
               echo "Waiting for Kafka..."
-              until nc -z {{ (split ":" (include "flexprice.kafka.brokers" .))._0 }} {{ (split ":" (include "flexprice.kafka.brokers" .))._1 | default "9092" }}; do
+              until nc -z {{ include "flexprice.kafka.host" . | quote }} {{ include "flexprice.kafka.port" . | quote }}; do
                 sleep 2
               done
               echo "Kafka is ready!"
               
               echo "Waiting for ClickHouse..."
-              until nc -z {{ (split ":" (include "flexprice.clickhouse.address" .))._0 }} {{ (split ":" (include "flexprice.clickhouse.address" .))._1 | default "9000" }}; do
+              until nc -z {{ include "flexprice.clickhouse.host" . | quote }} {{ include "flexprice.clickhouse.port" . | quote }}; do
                 sleep 2
               done
               echo "ClickHouse is ready!"
+              {{- if or .Values.temporal.external.enabled .Values.temporal.operator.enabled }}
+              
+              echo "Waiting for Temporal..."
+              until nc -z {{ include "flexprice.temporal.host" . | quote }} {{ include "flexprice.temporal.port" . | quote }}; do
+                sleep 2
+              done
+              echo "Temporal is ready!"
+              {{- else }}
+              echo "Skipping Temporal check (not enabled)"
+              {{- end }}
       containers:
         - name: consumer
           image: "{{ .Values.flexprice.image.repository }}:{{ .Values.flexprice.image.tag | default .Chart.AppVersion }}"

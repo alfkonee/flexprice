@@ -1,0 +1,205 @@
+# Simplified Operator Example
+# Uses pre-installed operators (Stackgres, ClickHouse)
+# Uses external Kafka approach (install Redpanda separately)
+#
+# Prerequisites:
+#   1. Install operators first:
+#      helm install stackgres-operator stackgres/stackgres-operator --namespace stackgres --create-namespace
+#      helm install clickhouse-operator altinity/altinity-clickhouse-operator --namespace clickhouse-system --create-namespace
+#   
+#   2. Install Redpanda separately:
+#      helm install redpanda redpanda/redpanda --namespace redpanda --create-namespace
+#
+#   3. Then install FlexPrice with this values file
+
+# FlexPrice application settings
+flexprice:
+  image:
+    repository: ghcr.io/alfkonee/flexprice
+    tag: "latest"
+  
+  deploymentMode: "production"
+  
+  api:
+    replicas: 1
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "100m"
+      limits:
+        memory: "1Gi"
+        cpu: "1000m"
+  
+  consumer:
+    replicas: 1
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "100m"
+      limits:
+        memory: "1Gi"
+        cpu: "1000m"
+  
+  worker:
+    replicas: 1
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "100m"
+      limits:
+        memory: "1Gi"
+        cpu: "1000m"
+
+# PostgreSQL via Stackgres Operator (pre-installed)
+postgres:
+  external:
+    enabled: false
+  operator:
+    install: false  # Don't install as subchart
+    enabled: true   # Create the CRDs
+    name: "fprice-pg"  # Short name for consistency
+    version: "17"
+    instances: 1  # Minimal setup
+    storage:
+      size: "10Gi"
+      storageClass: ""
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "250m"
+      limits:
+        memory: "1Gi"
+        cpu: "1000m"
+    connectionPooling:
+      enabled: false  # Disable for minimal setup
+    backup:
+      enabled: false  # Disable backups for minimal setup
+    postgresConfig:
+      max_connections: "100"
+      shared_buffers: "256MB"
+  user: "flexprice"
+  password: "flexprice"  # Must be set for migrations to work
+  database: "flexprice"
+  maxOpenConns: 25
+  maxIdleConns: 10
+
+# ClickHouse via Altinity Operator (pre-installed)
+clickhouse:
+  external:
+    enabled: false
+  operator:
+    install: false  # Don't install as subchart
+    enabled: true   # Create the CRDs
+    name: "fprice-ch"  # Short name (max 15 bytes)
+    version: "24.9"
+    cluster:
+      shardsCount: 1  # Minimal setup
+      replicasCount: 1  # Minimal setup
+    storage:
+      size: "10Gi"
+      storageClass: ""
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "500m"
+      limits:
+        memory: "2Gi"
+        cpu: "2000m"
+    zookeeper:
+      enabled: false  # Disable for minimal single-node setup
+  user: "flexprice"
+  password: "flexprice"  # Must be set for migrations to work
+  database: "flexprice"
+
+# Kafka - using Redpanda Operator (pre-installed)
+kafka:
+  external:
+    enabled: false
+  operator:
+    install: false  # Don't install as subchart - operator already installed
+    enabled: true   # Create the Redpanda CRD
+    name: "fprice-rp"  # Short name
+    replicas: 1  # Minimal setup
+    storage:
+      size: "10Gi"
+      storageClass: ""
+    resources:
+      cpu: "1"
+      memory: "2Gi"
+    tls:
+      enabled: false
+    config:
+      autoCreateTopicsEnabled: false
+      groupInitialRebalanceDelayMs: 0
+    schemaRegistry:
+      enabled: false  # Disable for minimal setup
+    console:
+      enabled: false  # Disable for minimal setup
+  consumerGroup: "flexprice-consumer"
+  clientId: "flexprice-client"
+  topics:
+    - name: "events"
+      partitions: 6
+      replicationFactor: 1
+    - name: "events_lazy"
+      partitions: 3
+      replicationFactor: 1
+    - name: "events_post_processing"
+      partitions: 3
+      replicationFactor: 1
+    - name: "system_events"
+      partitions: 3
+      replicationFactor: 1
+    - name: "wallet_alert"
+      partitions: 3
+      replicationFactor: 1
+
+# Temporal - Uses separately installed Temporal Helm chart
+temporal:
+  external:
+    enabled: true  # Set to true now that Temporal is deployed
+    address: "temporal-frontend.billing.svc.cluster.local:7233"  # Correct Temporal frontend address
+    namespace: "default"
+  operator:
+    install: false
+    enabled: false
+  taskQueue: "billing-task-queue"
+
+# Authentication
+auth:
+  provider: "flexprice"
+
+# Observability
+observability:
+  sentry:
+    enabled: false
+  pyroscope:
+    enabled: false
+  logging:
+    level: "info"
+
+# Email (disabled by default)
+email:
+  enabled: false
+
+# S3 (disabled by default)
+s3:
+  enabled: false
+
+# Webhook
+webhook:
+  enabled: true
+  pubsub: "kafka"
+
+# Run migrations on install/upgrade
+migrations:
+  enabled: true
+  runAsJob: true
+  clickhouse:
+    enabled: true
+  postgres:
+    enabled: true
+  kafka:
+    enabled: true
+  temporal:
+    enabled: true  # Enable now that Temporal is configured

@@ -2,6 +2,14 @@
 # FlexPrice Helm Chart Validation Test Suite (Bash)
 # Run this script to validate all use cases for the FlexPrice Helm chart
 #
+# Prerequisites:
+#   helm repo add stackgres https://stackgres.io/downloads/stackgres-k8s/stackgres/helm/
+#   helm repo add altinity https://docs.altinity.com/clickhouse-operator/
+#   helm repo add redpanda https://charts.redpanda.com
+#   helm repo add temporal https://go.temporal.io/helm-charts
+#   helm repo update
+#   helm dependency build
+#
 # Usage:
 #   ./test-chart.sh          # Run all tests
 #   ./test-chart.sh -v       # Verbose output
@@ -11,7 +19,7 @@ set -o pipefail
 
 # Configuration
 CHART_NAME="flexprice"
-CHART_DIR="./helm/flexprice"
+CHART_DIR="./"
 VERBOSE=false
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 

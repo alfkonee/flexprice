@@ -8,45 +8,59 @@ metadata:
 data:
   roles.json: |
     {
-      "roles": [
-        {
-          "name": "admin",
-          "description": "Full access to all resources",
-          "permissions": ["*"]
-        },
-        {
-          "name": "developer",
-          "description": "Read and write access to most resources",
-          "permissions": [
-            "events:*",
-            "customers:*",
-            "subscriptions:*",
-            "invoices:read",
-            "plans:read",
-            "meters:*"
-          ]
-        },
-        {
-          "name": "viewer",
-          "description": "Read-only access to all resources",
-          "permissions": [
-            "events:read",
-            "customers:read",
-            "subscriptions:read",
-            "invoices:read",
-            "plans:read",
-            "meters:read"
-          ]
-        },
-        {
-          "name": "billing",
-          "description": "Billing and invoice management",
-          "permissions": [
-            "invoices:*",
-            "customers:read",
-            "subscriptions:read",
-            "plans:read"
-          ]
+      "admin": {
+        "name": "Admin",
+        "description": "Full access to all resources",
+        "permissions": {
+          "*": ["*"]
         }
-      ]
+      },
+      "developer": {
+        "name": "Developer",
+        "description": "Read and write access to most resources",
+        "permissions": {
+          "event": ["read", "write"],
+          "customer": ["read", "write"],
+          "subscription": ["read", "write"],
+          "invoice": ["read"],
+          "plan": ["read"],
+          "meter": ["read", "write"]
+        }
+      },
+      "viewer": {
+        "name": "Viewer",
+        "description": "Read-only access to all resources",
+        "permissions": {
+          "event": ["read"],
+          "customer": ["read"],
+          "subscription": ["read"],
+          "invoice": ["read"],
+          "plan": ["read"],
+          "meter": ["read"]
+        }
+      },
+      "billing": {
+        "name": "Billing",
+        "description": "Billing and invoice management",
+        "permissions": {
+          "invoice": ["read", "write"],
+          "customer": ["read"],
+          "subscription": ["read"],
+          "plan": ["read"]
+        }
+      },
+      "event_ingestor": {
+        "name": "Event Ingestor",
+        "description": "Limited to ingesting events",
+        "permissions": {
+          "event": ["write"]
+        }
+      },
+      "event_reader": {
+        "name": "Event Reader",
+        "description": "Limited to reading events",
+        "permissions": {
+          "event": ["read"]
+        }
+      }
     }

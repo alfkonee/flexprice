@@ -23,7 +23,6 @@ spec:
       {{ .Values.clickhouse.user }}/quota: default
     profiles:
       default/max_memory_usage: {{ .Values.clickhouse.operator.settings.max_memory_usage | quote }}
-      default/max_concurrent_queries: {{ .Values.clickhouse.operator.settings.max_concurrent_queries | quote }}
     settings:
       max_concurrent_queries: {{ .Values.clickhouse.operator.settings.max_concurrent_queries }}
     clusters:
@@ -40,7 +39,7 @@ spec:
         spec:
           containers:
             - name: clickhouse
-              image: clickhouse/clickhouse-server:{{ .Values.clickhouse.operator.version }}-alpine
+              image: docker.io/clickhouse/clickhouse-server:{{ .Values.clickhouse.operator.version }}-alpine
               resources:
                 requests:
                   memory: {{ .Values.clickhouse.operator.resources.requests.memory | quote }}

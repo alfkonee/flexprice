@@ -1,0 +1,317 @@
+name: Helm Chart Validation
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'helm/**'
+      - '.github/workflows/helm-validate.yml'
+  pull_request:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'helm/**'
+      - '.github/workflows/helm-validate.yml'
+
+jobs:
+  helm-lint:
+    name: Lint Helm Charts
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: 'latest'
+
+      - name: Add Helm repositories
+        run: |
+          helm repo add stackgres https://stackgres.io/downloads/stackgres-k8s/stackgres/helm/
+          helm repo add altinity https://docs.altinity.com/clickhouse-operator/
+          helm repo add redpanda https://charts.redpanda.com
+          helm repo add temporal https://go.temporal.io/helm-charts
+          helm repo update
+
+      - name: Build chart dependencies
+        working-directory: helm/flexprice
+        run: helm dependency build
+
+      - name: Lint FlexPrice chart
+        working-directory: helm/flexprice
+        run: helm lint .
+
+  helm-template:
+    name: Template Validation
+    runs-on: ubuntu-latest
+    needs: helm-lint
+    
+    strategy:
+      matrix:
+        values-file:
+          - examples/values-simple-operators.yaml
+          - examples/values-operators.yaml
+          - examples/values-external.yaml
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: 'latest'
+
+      - name: Add Helm repositories
+        run: |
+          helm repo add stackgres https://stackgres.io/downloads/stackgres-k8s/stackgres/helm/
+          helm repo add altinity https://docs.altinity.com/clickhouse-operator/
+          helm repo add redpanda https://charts.redpanda.com
+          helm repo add temporal https://go.temporal.io/helm-charts
+          helm repo update
+
+      - name: Build chart dependencies
+        working-directory: helm/flexprice
+        run: helm dependency build
+
+      - name: Template with ${{ matrix.values-file }}
+        working-directory: helm/flexprice
+        run: |
+          echo "Testing template rendering with ${{ matrix.values-file }}..."
+          helm template flexprice . -f ${{ matrix.values-file }} > /tmp/manifests.yaml
+          echo "✓ Template rendered successfully"
+          echo "Generated manifests:"
+          head -50 /tmp/manifests.yaml
+
+      - name: Validate manifest syntax
+        working-directory: helm/flexprice
+        run: |
+          echo "Validating YAML syntax..."
+          helm template flexprice . -f ${{ matrix.values-file }} | \
+          python3 -c "
+          import sys
+          import yaml
+          try:
+              docs = list(yaml.safe_load_all(sys.stdin))
+              print(f'✓ Valid YAML with {len(docs)} documents')
+          except yaml.YAMLError as e:
+              print(f'✗ YAML validation failed: {e}')
+              sys.exit(1)
+          "
+
+  helm-test:
+    name: Helm Test Configuration
+    runs-on: ubuntu-latest
+    needs: helm-lint
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: 'latest'
+
+      - name: Add Helm repositories
+        run: |
+          helm repo add stackgres https://stackgres.io/downloads/stackgres-k8s/stackgres/helm/
+          helm repo add altinity https://docs.altinity.com/clickhouse-operator/
+          helm repo add redpanda https://charts.redpanda.com
+          helm repo add temporal https://go.temporal.io/helm-charts
+          helm repo update
+
+      - name: Build chart dependencies
+        working-directory: helm/flexprice
+        run: helm dependency build
+
+      - name: Validate test configuration
+        working-directory: helm/flexprice
+        run: |
+          echo "Validating Helm test definitions..."
+          helm template flexprice . | grep -A 10 "kind: Pod" | grep -E "name:|kind:" > /tmp/tests.txt || true
+          if [ -s /tmp/tests.txt ]; then
+            echo "✓ Test templates generated successfully"
+            grep "kind:" /tmp/tests.txt | wc -l | xargs echo "✓ Test resources defined:"
+          else
+            echo "ℹ No test resources defined"
+          fi
+
+  chart-schema:
+    name: Chart Schema Validation
+    runs-on: ubuntu-latest
+    needs: helm-lint
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: 'latest'
+
+      - name: Validate Chart.yaml
+        working-directory: helm/flexprice
+        run: |
+          echo "Validating Chart.yaml structure..."
+          helm lint . --values /dev/null 2>&1 | grep -i "chart\|version\|name" || true
+          
+          # Check for required Chart.yaml fields
+          if grep -q "^name:" Chart.yaml && \
+             grep -q "^version:" Chart.yaml && \
+             grep -q "^apiVersion:" Chart.yaml; then
+            echo "✓ Chart.yaml has required fields"
+          else
+            echo "✗ Chart.yaml missing required fields"
+            exit 1
+          fi
+
+      - name: Validate values.yaml
+        working-directory: helm/flexprice
+        run: |
+          echo "Validating values.yaml structure..."
+          python3 -c "
+          import yaml
+          with open('values.yaml', 'r') as f:
+              try:
+                  data = yaml.safe_load(f)
+                  if isinstance(data, dict):
+                      print(f'✓ values.yaml is valid YAML with {len(data)} root keys')
+                  else:
+                      print('✗ values.yaml root must be a dictionary')
+                      exit(1)
+              except yaml.YAMLError as e:
+                  print(f'✗ values.yaml is invalid: {e}')
+                  exit(1)
+          "
+
+  template-defaults:
+    name: Template with Default Values
+    runs-on: ubuntu-latest
+    needs: helm-lint
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: 'latest'
+
+      - name: Add Helm repositories
+        run: |
+          helm repo add stackgres https://stackgres.io/downloads/stackgres-k8s/stackgres/helm/
+          helm repo add altinity https://docs.altinity.com/clickhouse-operator/
+          helm repo add redpanda https://charts.redpanda.com
+          helm repo add temporal https://go.temporal.io/helm-charts
+          helm repo update
+
+      - name: Build chart dependencies
+        working-directory: helm/flexprice
+        run: helm dependency build
+
+      - name: Template with default values
+        working-directory: helm/flexprice
+        run: |
+          echo "Testing template with default values..."
+          helm template flexprice . > /tmp/default-manifests.yaml
+          
+          # Count different resource types
+          echo "Generated resources:"
+          grep "^kind:" /tmp/default-manifests.yaml | sort | uniq -c
+          
+          # Verify no "PLACEHOLDER" or undefined values
+          if grep -i "placeholder\|undefined\|<.*>" /tmp/default-manifests.yaml | grep -v "# " > /dev/null; then
+            echo "✗ Found placeholder values in templates"
+            grep -i "placeholder\|undefined\|<.*>" /tmp/default-manifests.yaml | grep -v "# " | head -5
+            exit 1
+          fi
+          echo "✓ No placeholder values found"
+
+  summary:
+    name: Validation Summary
+    runs-on: ubuntu-latest
+    needs: [helm-lint, helm-template, helm-test, chart-schema, template-defaults]
+    if: always()
+    
+    steps:
+      - name: Check job results
+        run: |
+          if [ "${{ needs.helm-lint.result }}" = "failure" ] || \
+             [ "${{ needs.helm-template.result }}" = "failure" ] || \
+             [ "${{ needs.chart-schema.result }}" = "failure" ] || \
+             [ "${{ needs.template-defaults.result }}" = "failure" ]; then
+            echo "::error::Helm chart validation failed"
+            exit 1
+          else
+            echo "::notice::✅ All Helm chart validations passed!"
+          fi
+
+      - name: Generate summary report
+        if: always()
+        run: |
+          {
+            echo "# 📋 Helm Chart Validation Results"
+            echo ""
+            echo "## Summary"
+            echo ""
+            echo "| Check | Status |"
+            echo "|-------|--------|"
+            echo "| Linting | ${{ needs.helm-lint.result == 'success' && '✅ PASS' || '❌ FAIL' }} |"
+            echo "| Template Rendering | ${{ needs.helm-template.result == 'success' && '✅ PASS' || '❌ FAIL' }} |"
+            echo "| Test Configuration | ${{ needs.helm-test.result == 'success' && '✅ PASS' || '❌ FAIL' }} |"
+            echo "| Schema Validation | ${{ needs.chart-schema.result == 'success' && '✅ PASS' || '❌ FAIL' }} |"
+            echo "| Default Values | ${{ needs.template-defaults.result == 'success' && '✅ PASS' || '❌ FAIL' }} |"
+            echo ""
+            echo "## Detailed Results"
+            echo ""
+            echo "### Helm Lint"
+            echo "- **Status**: ${{ needs.helm-lint.result }}"
+            echo "- **Purpose**: Validates chart syntax and best practices"
+            echo ""
+            echo "### Template Rendering"
+            echo "- **Status**: ${{ needs.helm-template.result }}"
+            echo "- **Purpose**: Tests template rendering with multiple configuration scenarios"
+            echo "- **Configurations tested**:"
+            echo "  - values-simple-operators.yaml"
+            echo "  - values-operators.yaml"
+            echo "  - values-external.yaml"
+            echo ""
+            echo "### Test Configuration"
+            echo "- **Status**: ${{ needs.helm-test.result }}"
+            echo "- **Purpose**: Validates Helm test definitions"
+            echo ""
+            echo "### Schema Validation"
+            echo "- **Status**: ${{ needs.chart-schema.result }}"
+            echo "- **Purpose**: Validates Chart.yaml and values.yaml structure"
+            echo ""
+            echo "### Default Values"
+            echo "- **Status**: ${{ needs.template-defaults.result }}"
+            echo "- **Purpose**: Verifies templates render correctly with default values"
+            echo ""
+          } >> $GITHUB_STEP_SUMMARY
+
+      - name: Set workflow status badge
+        if: always()
+        run: |
+          if [ "${{ needs.helm-lint.result }}" = "success" ] && \
+             [ "${{ needs.helm-template.result }}" = "success" ] && \
+             [ "${{ needs.chart-schema.result }}" = "success" ] && \
+             [ "${{ needs.template-defaults.result }}" = "success" ]; then
+            echo "VALIDATION_STATUS=✅ PASSED" >> $GITHUB_ENV
+            echo "::notice::🎉 All validations passed successfully!"
+          else
+            echo "VALIDATION_STATUS=❌ FAILED" >> $GITHUB_ENV
+            echo "::error::Some validations failed. Please check the logs above."
+          fi
+
+      - name: Output final status
+        run: |
+          echo "::notice::Validation Status: ${{ env.VALIDATION_STATUS }}"
